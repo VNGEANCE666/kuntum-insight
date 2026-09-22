@@ -1,0 +1,45 @@
+/* ============================================================
+   Topic & Keyword Insights
+   ============================================================ */
+.topic-tabs {
+  display: inline-flex;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 4px;
+  box-shadow: var(--shadow-sm);
+}
+
+.topic-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+  transition: all var(--transition-fast);
+}
+
+.topic-tab:hover {
+  background: var(--color-bg);
+}
+
+.topic-tab:active {
+  transform: scale(0.96);
+}
+
+.topic-tab.is-active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.topic-tab--positif.is-active { background: var(--color-positive); color: #fff; }
+.topic-tab--netral.is-active { background: #F0B429; color: #fff; }
+.topic-tab--negatif.is-active { background: var(--color-negative); color: #fff; }
+
+.topic-chart {
+  width: 100%;
+}

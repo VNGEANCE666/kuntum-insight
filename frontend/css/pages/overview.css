@@ -1,0 +1,67 @@
+/* ============================================================
+   Overview page — layout & chart tweaks
+   ============================================================ */
+#ov-trend {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tren sentimen: small multiples — 3 mini-chart berdampingan, sumbu Y
+   masing-masing menyesuaikan datanya sendiri (Positif/Netral/Negatif). */
+.trend-grid {
+  margin-top: 4px;
+}
+
+.trend-mini {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trend-mini__title {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin-bottom: 6px;
+}
+
+#ov-trend .trend-mini .chart-wrap {
+  height: 210px;
+  flex: 1;
+}
+
+.review-quote {
+  font-size: var(--font-size-small);
+}
+
+/* KPI value untuk sentimen diberi warna lewat inline style; pastikan
+   tetap jelas & kontras terhadap kartu putih. */
+.kpi__value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Print ---------- */
+@media print {
+  /* Sembunyikan tombol cetak sendiri */
+  .print-btn { display: none !important; }
+
+  /* Header tidak putus halaman */
+  .page-header { page-break-after: avoid; }
+
+  /* KPI cards & donut/bar chart grid */
+  .grid--2col { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* KPI & donut/bar chart grids: jangan putus antar baris */
+  .grid--kpi, .grid--2col, .grid--3col { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Trend: paksa 3 kolom meski mobile */
+  .trend-grid { grid-template-columns: repeat(3, 1fr) !important; }
+  .trend-mini { break-inside: avoid; page-break-inside: avoid; }
+  .trend-mini .chart-wrap { height: 180px !important; }
+
+  /* ChartWrap: jangan putus di tengah */
+  .chart-wrap { page-break-inside: avoid; break-inside: avoid; }
+
+  /* Skeleton / error state tidak perlu dicetak */
+  .skeleton, .empty-state { display: none !important; }
+}

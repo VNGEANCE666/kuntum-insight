@@ -1,0 +1,105 @@
+/* ============================================================
+   Pipeline Status page
+   ============================================================ */
+/* Hover + tekan untuk kartu status pipeline (§6) */
+.pipe-card {
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.pipe-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.pipe-card:active {
+  transform: translateY(0) scale(0.985);
+  box-shadow: var(--shadow-sm);
+}
+
+.pipe-card__key {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+
+.pipe-card__value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+  word-break: break-word;
+}
+
+.pipe-card__value--sm {
+  font-size: 1.15rem;
+  line-height: 1.35;
+}
+
+.pipe-card__hint {
+  margin-top: 6px;
+  font-size: var(--font-size-small);
+  color: var(--color-text-light);
+}
+
+.pipeline-steps {
+  display: flex;
+  flex-direction: column;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pipeline-step:last-child {
+  border-bottom: none;
+}
+
+.pipeline-step__mark {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-border);
+  color: var(--color-text-light);
+}
+
+.pipeline-step__mark svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pipeline-step__mark.is-done {
+  background: var(--color-positive);
+  border-color: var(--color-positive);
+  color: #fff;
+}
+
+.pipeline-step__body {
+  flex: 1;
+}
+
+.pipeline-step__title {
+  font-weight: 600;
+}
+
+.pipeline-step__desc {
+  font-size: var(--font-size-small);
+  color: var(--color-text-muted);
+}
+
+.pipeline-step__status {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  color: var(--color-positive);
+  white-space: nowrap;
+}

@@ -1,0 +1,9 @@
+{
+  "model_version": "v1",
+  "algorithm": "Logistic Regression (balanced)",
+  "macro_f1": 0.5234906227014456,
+  "accuracy": 0.8775510204081632,
+  "trained_at": "2026-08-24T11:22:58.105388+00:00",
+  "min_token_threshold": 3,
+  "vocabulary_size": 3138
+}

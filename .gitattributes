@@ -1,0 +1,12 @@
+# Normalisasi akhir baris ke LF untuk file teks (repo dikerjakan dari Windows)
+* text=auto eol=lf
+
+# Artefak biner — jangan pernah dilakukan diff/rewrite line-ending
+*.pkl binary
+*.db binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.ico binary
+*.svg binary
