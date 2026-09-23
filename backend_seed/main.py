@@ -38,8 +38,9 @@ from inference_utils import identity_tokenizer, identity_preprocessor
 __main__.identity_tokenizer = identity_tokenizer
 __main__.identity_preprocessor = identity_preprocessor
 
-DB_PATH = Path("data/kuntum_insight.db")
-MODELS_DIR = Path("models")
+BASE_DIR = Path(__file__).resolve().parent.parent
+DB_PATH = BASE_DIR / "data/kuntum_insight.db"
+MODELS_DIR = BASE_DIR / "models"
 
 # CORS: di development, izinkan origin frontend lokal umum (Vite/CRA/Next).
 # Di production, WAJIB isi env var FRONTEND_ORIGIN dengan domain asli
@@ -503,5 +504,5 @@ def reload_cache():
 # ---------------------------------------------------------------------------
 from fastapi.staticfiles import StaticFiles
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+FRONTEND_DIR = BASE_DIR / "frontend"
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

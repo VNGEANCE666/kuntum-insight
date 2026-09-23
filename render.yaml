@@ -1,0 +1,25 @@
+# Render Blueprint — Kuntum Insight (referensi konfigurasi, bukan jalur deploy free tier)
+#
+# Di free tier, BLUEPRINT wajib kartu kredit (limitasi Render). Gunakan
+# Web Service MANUAL di dashboard dengan nilai build/start/environment di bawah ini.
+#
+# Poin penting yang WAJIB dipertahankan:
+# - `runtime: python` (bukan Docker) — PYTHON_VERSION hanya dibaca di runtime python.
+# - `PYTHON_VERSION` versi persis (3.12.x) — scikit-learn==1.6.1 TIDAK punya wheel
+#   untuk Python >= 3.13 (default Render sekarang 3.14.x) — build akan gagal.
+# - `PYTHONPATH: backend_seed` — membuat `from inference_utils import ...` (dan
+#   patch `__main__` untuk joblib.load()) bekerja karena main.py mem-importnya
+#   sebagai top-level module.
+services:
+  - type: web
+    name: kuntum-insight
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend_seed/requirements.txt
+    startCommand: uvicorn backend_seed.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/pipeline/status
+    envVars:
+      - key: PYTHONPATH
+        value: backend_seed
+      - key: PYTHON_VERSION
+        value: 3.12.3

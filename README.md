@@ -48,6 +48,42 @@ Arsitektur **client-server**: backend FastAPI membaca data ulasan + artefak mode
    - Frontend: `http://127.0.0.1:8000/`
    - Dokumentasi API: `http://127.0.0.1:8000/docs`
 
+## Deploy ke internet (gratis)
+
+Repo ini sudah siap deploy ke **Render free tier**. Satu proses FastAPI melayani
+sekaligus API + frontend (satu origin), jadi tidak ada konfigurasi CORS tambahan
+di produksi.
+
+> **Catatan:** `render.yaml` di root dipertahankan sebagai **referensi konfigurasi**.
+> Di free tier, rute **Blueprint wajib memasang kartu kredit** (limitasi Render),
+> jadi gunakan rute **Web Service manual** di bawah dan isi field-nya apa adanya
+> dengan nilai dari `render.yaml`.
+
+1. Pastikan repo GitHub publik (repo ini: `github.com/VNGEANCE666/kuntum-insight`).
+2. Login ke [dashboard.render.com](https://dashboard.render.com) → **New+ → Web Service**
+   (bukan Blueprint) → **Connect repo** GitHub `kuntum-insight`.
+3. Isi form deploy:
+   - **Runtime:** Python
+   - **Branch:** `main`
+   - **Build Command:** `pip install -r backend_seed/requirements.txt`
+   - **Start Command:** `uvicorn backend_seed.main:app --host 0.0.0.0 --port $PORT`
+   - **Instance Type:** Free
+4. Tambah environment variables (bagian Advanced/Environment):
+   - `PYTHONPATH` = `backend_seed`
+   - `PYTHON_VERSION` = `3.12.3`
+5. **Create Web Service** → tunggu build selesai. Cek log deploy ada baris
+   `[startup] 2832 ulasan dimuat, model versi v1 siap.` → buka
+   `https://<nama>.onrender.com`.
+
+**Detail yang tidak boleh diubah** (sumber: `render.yaml`):
+- `PYTHON_VERSION=3.12.3` — `scikit-learn==1.6.1` tidak punya wheel untuk Python ≥ 3.13
+  (default Render sekarang 3.14.x), build akan gagal tanpa pin ini.
+- `PYTHONPATH=backend_seed` — diperlukan agar `from inference_utils import ...`
+  (dan patch `__main__` untuk `joblib.load()` model, HANDOFF §3.1) bekerja.
+
+**Perilaku free tier:** service tidur ±15 menit tanpa kunjungan; kunjungan pertama
+mengalami cold start (30–60 detik). Custom domain hanya pada plan berbayar.
+
 ## Verifikasi end-to-end
 
 Skrip smoke test seluruh 10 endpoint + static frontend terhadap data asli:
