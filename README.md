@@ -48,41 +48,83 @@ Arsitektur **client-server**: backend FastAPI membaca data ulasan + artefak mode
    - Frontend: `http://127.0.0.1:8000/`
    - Dokumentasi API: `http://127.0.0.1:8000/docs`
 
-## Deploy ke internet (gratis)
+## Deploy ke internet
 
-Repo ini sudah siap deploy ke **Render free tier**. Satu proses FastAPI melayani
-sekaligus API + frontend (satu origin), jadi tidak ada konfigurasi CORS tambahan
-di produksi.
+Satu proses FastAPI melayani sekaligus API + frontend (satu origin), jadi tidak
+ada konfigurasi CORS tambahan di produksi mana pun.
 
-> **Catatan:** `render.yaml` di root dipertahankan sebagai **referensi konfigurasi**.
-> Di free tier, rute **Blueprint wajib memasang kartu kredit** (limitasi Render),
-> jadi gunakan rute **Web Service manual** di bawah dan isi field-nya apa adanya
-> dengan nilai dari `render.yaml`.
+### Opsi 1 — Cloudflare Tunnel dari laptop (paling cepat, tanpa kartu)
 
-1. Pastikan repo GitHub publik (repo ini: `github.com/VNGEANCE666/kuntum-insight`).
-2. Login ke [dashboard.render.com](https://dashboard.render.com) → **New+ → Web Service**
-   (bukan Blueprint) → **Connect repo** GitHub `kuntum-insight`.
-3. Isi form deploy:
-   - **Runtime:** Python
-   - **Branch:** `main`
-   - **Build Command:** `pip install -r backend_seed/requirements.txt`
-   - **Start Command:** `uvicorn backend_seed.main:app --host 0.0.0.0 --port $PORT`
-   - **Instance Type:** Free
-4. Tambah environment variables (bagian Advanced/Environment):
-   - `PYTHONPATH` = `backend_seed`
-   - `PYTHON_VERSION` = `3.12.3`
-5. **Create Web Service** → tunggu build selesai. Cek log deploy ada baris
-   `[startup] 2832 ulasan dimuat, model versi v1 siap.` → buka
-   `https://<nama>.onrender.com`.
+URL publik sementara (`*.trycloudflare.com`), gratis, tanpa akun/kartu. Laptop
+harus menyala dan URL berubah setiap restart.
 
-**Detail yang tidak boleh diubah** (sumber: `render.yaml`):
-- `PYTHON_VERSION=3.12.3` — `scikit-learn==1.6.1` tidak punya wheel untuk Python ≥ 3.13
-  (default Render sekarang 3.14.x), build akan gagal tanpa pin ini.
-- `PYTHONPATH=backend_seed` — diperlukan agar `from inference_utils import ...`
-  (dan patch `__main__` untuk `joblib.load()` model, HANDOFF §3.1) bekerja.
+```powershell
+.\scripts\start_public.ps1
+```
 
-**Perilaku free tier:** service tidur ±15 menit tanpa kunjungan; kunjungan pertama
-mengalami cold start (30–60 detik). Custom domain hanya pada plan berbayar.
+Script otomatis: jalankan `uvicorn` (port 8000) → buat tunnel → tampilkan URL
+publik dan file `cloudflared` diunduh sendiri ke `%LOCALAPPDATA%\cloudflared`
+bila belum ada. Referensi perintah manual (bila ingin dijalankan sendiri):
+
+```powershell
+$env:PYTHONPATH="backend_seed"
+uvicorn backend_seed.main:app --host 127.0.0.1 --port 8000
+# di terminal terpisah:
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+
+Untuk URL yang **stabil** (tidak berubah), butuh akun Cloudflare + domain pribadi
+(named tunnel), atau akun ngrok free (satu static domain `*.ngrok-free.app`,
+kapasitas 1 GB/bulan).
+
+### Opsi 2 — PythonAnywhere free (always-on, tanpa kartu)
+
+URL stabil di `https://<username>.pythonanywhere.com` — **sudah live di
+`https://vngnc.pythonanywhere.com`** (seluruh endpoint + frontend terverifikasi
+200). FastAPI via ASGI (beta). Pembatasan free tier: disk 512 MiB, CPU 100
+detik/hari, 1 web app (unused web app berakhir setelah 1 bulan).
+
+> ⚠️ Subdomain **terikat username** (`vngnc.pythonanywhere.com`): username tidak
+> bisa diganti, dan domain lain di `*.pythonanywhere.com` ditolak oleh API
+> (400). Custom domain butuh akun berbayar. Rincian + cara deploy via API
+> (otomasi) di HANDOFF.md §12.
+
+1. Daftar akun gratis di [pythonanywhere.com](https://www.pythonanywhere.com) (tanpa kartu).
+2. **Account → API token** → buat token (dibaca otomatis dari Bash console).
+3. Buka **Bash console**, lalu:
+   ```bash
+   pip install --user pythonanywhere
+   git clone https://github.com/VNGEANCE666/kuntum-insight.git
+   mkvirtualenv --python=python3.12 kuntum
+   workon kuntum
+   pip install --no-cache-dir -r backend_seed/requirements.txt
+   ```
+   > `scikit-learn==1.6.1` wajib Python ≤3.12 — jangan buat venv dengan Python
+   > 3.13+. Calonnya besar tapi muat di 512 MiB; hindari `pip cache`.
+4. Buat situs ASGI (ganti `USERNAME`):
+   ```bash
+   pa website create --domain USERNAME.pythonanywhere.com \
+     --command '/home/USERNAME/.virtualenvs/kuntum/bin/uvicorn --app-dir /home/USERNAME/kuntum-insight/backend_seed --uds ${DOMAIN_SOCKET} main:app'
+   ```
+5. Cek log `/var/log/USERNAME.pythonanywhere.com.server.log` — tanda sukses:
+   `[startup] 2832 ulasan dimuat, model versi v1 siap.`
+6. Setelah perubahan kode: `pa website reload --domain USERNAME.pythonanywhere.com`.
+
+> `--app-dir backend_seed` membuat `from inference_utils import ...` (patch
+> `__main__` untuk `joblib.load()`, HANDOFF §3.1) bekerja tanpa PYTHONPATH, dan
+> `BASE_DIR` di `main.py` membuat `data/` & `models/` ditemukan terlepas dari CWD.
+
+### Opsi 3 — Render (perlu kartu kredit; tidak wajib dibaca)
+
+`render.yaml` di root tetap disimpan sebagai **referensi konfigurasi**. Saat ini
+Render mewajibkan kartu kredit bahkan untuk Web Service free (dan rute Blueprint
+juga), jadi bukan lagi opsi "tanpa kartu". Jika suatu saat kartu tersedia,
+pakai nilai dari `render.yaml`: Build `pip install -r backend_seed/requirements.txt`,
+Start `uvicorn backend_seed.main:app --host 0.0.0.0 --port $PORT`, env
+`PYTHONPATH=backend_seed` dan `PYTHON_VERSION=3.12.3`.
+
+**Perilaku free tier Render:** service tidur ±15 menit tanpa kunjungan; cold start
+30–60 detik di kunjungan pertama.
 
 ## Verifikasi end-to-end
 

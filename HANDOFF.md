@@ -272,3 +272,28 @@ Bagian ini mendokumentasikan fitur/keputusan yang **sudah masuk kedalam kode** t
 - `state.js`: cache in-memory ber-TTL (`getCache`/`setCache`) untuk data yang jarang berubah dalam satu sesi — `/api/overview/kpi`, `/api/recommendations`, `/api/pipeline/status` (DESIGN §7).
 - `api.js`: `AbortController` + `abortInFlight()` membatalkan request usang saat filter/pencarian berubah cepat berturut-turut — mencegah race condition (DESIGN §4.3).
 - Skeleton loader per komponen (`skeleton.js`), slide panel (`panel.js`), router hash dengan transisi fade/slide + `scrollTo` atas halaman (`router.js`), sidebar collapse (desktop) & drawer (mobile) dengan persistensi `localStorage` (`layout.js`).
+
+## 12. Deployment Publik (Hosting) — Temuan yang Berpengaruh
+
+Fase ini mengejar satu kebutuhan: URL publik **gratis, tanpa kartu kredit**, untuk pemakaian nyata dan laporan. Yang tercatat di sini hanya temuan yang memengaruhi keputusan/reproduksi; detail harian yang tidak berdampak dihapus.
+
+### 12.1 Keputusan hosting: tertutup vs terpakai
+- **Render free tier → TERTUTUP**: wajib kartu kredit baik lewat Blueprint maupun Web Service manual. `render.yaml` tetap disimpan sebagai referensi konfigurasi saja.
+- **HuggingFace Docker Spaces → TERTUTUP**: kini berbayar (PRO).
+- **Cloudflare Quick Tunnel → DIPAKAI SEMENTARA**: gratis & instan, tapi URL `*.trycloudflare.com` berubah setiap restart dan laptop harus menyala — bukan solusi always-on. Di-arsipkan dalam `scripts/start_public.ps1`.
+- **PythonAnywhere free → DIPAKAI & LIVE**: `https://vngnc.pythonanywhere.com`, satu proses FastAPI menyajikan API + frontend (sama-origin, tanpa CORS).
+
+### 12.2 PythonAnywhere — fakta berpengaruh (untuk reproduksi & otomasi)
+- **Subdomain = username, tidak bisa dikustomisasi.** API menolak `kuntum-insight.pythonanywhere.com` (HTTP 400), username PA tidak dapat diganti, dan custom domain hanya untuk akun berbayar. Konsekuensi desain: URL publik selamanya `vngnc.pythonanywhere.com`.
+- **FastAPI berjalan di free tier via ASGI**, command terverifikasi:
+  ```
+  /home/vngnc/.virtualenvs/kuntum/bin/uvicorn --app-dir /home/vngnc/kuntum-insight/backend_seed --uds ${DOMAIN_SOCKET} main:app
+  ```
+  `${DOMAIN_SOCKET}` (soket unix lokasi web server) diisi otomatis oleh sistem. `--app-dir backend_seed` membuat folder masuk `sys.path`, sehingga patch `__main__` untuk `joblib.load()` (HANDOFF §3.1) dan relative import (`inference_utils`) jalan **tanpa PYTHONPATH**; `BASE_DIR` absolut di `main.py` membuat `data/` & `models/` ketemu terlepas dari CWD.
+- **Wajib Python 3.12** (scikit-learn==1.6.1 ditulis ketat): `python3.12 -m venv ~/.virtualenvs/kuntum`. Total ~30 paket (fastapi, uvicorn[standard], pandas, scipy, dsb.) muat di disk 512 MiB dengan `pip install --no-cache-dir` (±5 menit).
+- **Situs dibangun lewat API v1, bukan tab Web:** `POST /api/v1/user/{user}/websites/` dengan body `{"domain_name", "enabled": true, "webapp": {"command": "..."}}` (endpoint v0/webapp lama tidak berlaku untuk ASGI). Response berisi path log (`/var/log/<domain>.server.log`/`.error.log`) yang bisa dibaca via Files API — jalur ini untuk memeriksa startup.
+- **Console API tidak menyalakan proses console:** console yang dibuat via `POST /api/v0/user/{user}/consoles/` harus dibuka **sekali di browser** dulu; sebelum itu `POST .../send_input/` gagal HTTP 412 `"Console not yet started..."`. Output dibaca via `GET /consoles/{id}/get_latest_output/` (≈500 karakter terakhir saja — cukup untuk melihat hasil perintah/error). Konsekuensi: seluruh setup bisa diotomasi via API, kecuali satu langkah manual "buka console di browser".
+- **Batasan free tier**: 1 web app, disk 512 MiB, CPU 100 detik/hari, dan web app yang tak dikunjungi ±1 bulan akan berhenti — cukup dipulihkan dengan reload (tab Web). API token = kredensial akun; **jangan pernah dicatat/di-commit ke repo.**
+
+### 12.3 Bukti verifikasi di situs live
+Seluruh titik dicek via HTTP publik dengan hasil 200 dan identik dengan data lokal: `/` (title dashboard), `/api/pipeline/status` (model v1, 2832 ulasan), `/api/overview/kpi`, `/api/overview/sentiment-distribution`, `/api/overview/rating-distribution`, `/api/overview/sentiment-trend`, `/api/topics`, `/api/recommendations`, `/api/reviews`. Tolak ukur smoke test lokal (`verify_end_to_end.py`) sudah diulang manual terhadap URL produksi.
