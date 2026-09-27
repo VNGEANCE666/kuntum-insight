@@ -134,8 +134,56 @@ Skrip smoke test seluruh 10 endpoint + static frontend terhadap data asli:
 python backend_seed/verify_end_to_end.py
 ```
 
+## Akses & Login
+
+Dashboard dilindungi autentikasi (token JWT). Detail desain & alur lengkap:
+HANDOFF.md §13.
+
+**Kredensial default (perangkat lunak, BUKAN untuk produksi):**
+- username `admin`, password `admin`
+- Berlaku hanya jika `backend_seed/auth.json` belum ada — saat pertama kali
+  backend dijalankan, file itu dibuat otomatis dengan akun `admin/admin`
+  beserta peringatan di log server.
+
+**Cara masuk:**
+1. Jalankan backend (lihat seksi "Menjalankan"), lalu buka
+   `http://127.0.0.1:8000/login.html`.
+2. Masukkan username & password, klik **Masuk**.
+3. Berhasil → dialihkan ke dashboard. Gagal → pesan error di halaman login.
+
+**Segera ganti kredensial untuk produksi** (wajib, jangan pakai admin/admin):
+```bash
+python scripts/set_auth.py set-pass admin --password "<password kuat>"
+python scripts/set_auth.py rotate-secret      # cabut semua sesi lama
+```
+
+`backend_seed/auth.json` (berisi server_secret + hash password) **tidak
+di-commit** (lihat .gitignore) — jangan pernah dipaksa commit.
+
 ## Catatan
 
 - **Gotcha teknis kritis** (loading `.pkl`, CORS, static mount, NaN → None) ada di HANDOFF.md §3 & §5 — baca sebelum menyentuh `main.py`.
 - **Keterbatasan data yang diketahui:** ±94% tanggal ulasan lama terkompresi akibat parsing format relatif Google Maps (PRD §5.1 & HANDOFF §7) — sudah di-handle di endpoint `sentiment-trend`.
 - `data/` dan `models/` sengaja di-commit ke repo agar paket ini **self-contained** (ukuran total masih kecil, tanpa Git LFS).
+## Akses & Login
+
+Dashboard dilindungi autentikasi. Halaman masuk: **/login.html** — buka
+`http://127.0.0.1:8000/login.html` saat backend lokal berjalan, atau
+`/login.html` pada domain produksi (PythonAnywhere: `https://vngnc.pythonanywhere.com/login.html`).
+
+Kredensial default (hanya berlaku saat `backend_seed/auth.json` dibuat
+otomatis oleh backend untuk pertama kalinya): **username `admin` / password `admin`**.
+Ganti segera untuk penggunaan nyata:
+
+    python scripts/set_auth.py add-user <nama> --password <password kuat>
+    python scripts/set_auth.py remove-user admin
+
+Kredensial & `server_secret` tersimpan di `backend_seed/auth.json` yang
+**TIDAK di-commit** (lihat `.gitignore`). Jangan pernah meng-commit file ini.
+Seluruh endpoint `/api/*` (kecuali `/api/auth/login`) memerlukan header
+`Authorization: Bearer <token>`. Detail alur autentikasi, format token, TTL
+sesi, dan rate-limit percobaan login ada di **HANDOFF.md §13**.
+
+Setelah masuk, pojok kanan atas menampilkan username (**admin**) beserta **tombol
+Keluar** — logout mencabut token di server (token langsung menjadi 401, bukan
+sekadar response sukses) lalu mengembalikan ke halaman login.

@@ -1,6 +1,9 @@
+import { getToken, clearToken, redirectToLogin } from './auth.js';
+
 /* ============================================================
    API Service — Semua fetch memakai path RELATIF (satu origin
-   dengan backend via mount StaticFiles).
+   dengan backend via mount StaticFiles). Setiap request otomatis
+   disertai header Authorization: Bearer <token> (§13).
    ============================================================ */
 
 // Set controller yang sedang aktif untuk request yang "dapat dibatalkan"
@@ -43,7 +46,14 @@ export async function apiGet(endpoint, params = {}, opts = {}) {
   const signal = opts.signal || undefined;
 
   try {
-    const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+    const headers = { Accept: 'application/json', ...(opts.headers || {}) };
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(url, { signal, headers });
+    if (res.status === 401 && !endpoint.startsWith('/api/auth/')) {
+      handleUnauthorized();
+      throw new ApiError(res.status, 'Sesi berakhir. Silakan login kembali.');
+    }
     if (!res.ok) {
       let detail = `Error ${res.status}`;
       try {

@@ -11,6 +11,9 @@ env/
 .env.*
 *.env
 
+# Kredensial backend (server_secret + user PBKDF2 hash) — JANGAN commit
+backend_seed/auth.json
+
 # OS / editor
 .DS_Store
 Thumbs.db

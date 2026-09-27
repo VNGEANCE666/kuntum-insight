@@ -1,0 +1,160 @@
+/* ============================================================
+   Halaman login — kartu terpusat, gaya konsisten dengan tema
+   (DESIGN §3.4). Halaman ini standalone (di luar layout dashboard).
+   ============================================================ */
+
+/* Override variabel default agar kartu terlihat berisi di tengah. */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+
+.login {
+  width: 100%;
+  max-width: 400px;
+  padding: var(--sp-5);
+}
+
+.login__card {
+  max-width: 360px;
+  margin: 0 auto;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6);
+  box-shadow: var(--shadow-lg);
+}
+
+.login__brand {
+  text-align: center;
+  margin-bottom: var(--sp-5);
+}
+
+.login__logo {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: var(--sp-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.login__title {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--font-size-h2);
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+}
+
+.login__subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+/* ---- Form ---- */
+.login__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.login__field { display: block; }
+
+.login__label {
+  display: block;
+  margin-bottom: var(--sp-2);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.login__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  color: var(--color-text);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login__input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.login__pw {
+  position: relative;
+  display: block;
+}
+
+.login__pw .login__input { padding-right: 42px; }
+
+.login__toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.login__toggle:hover { color: var(--color-primary); }
+
+.login__error {
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--color-negative);
+  background: var(--color-negative-soft);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+}
+
+.login__submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  padding: 11px 16px;
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  color: var(--color-white);
+  background: var(--color-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.login__submit:hover:not(:disabled) { background: var(--color-primary-hover); }
+.login__submit:disabled { opacity: 0.65; cursor: default; }
+
+.login__footer {
+  margin: var(--sp-4) 0 0;
+  text-align: center;
+  font-size: var(--font-size-small);
+  color: var(--color-text-light);
+}
+
+@media (max-width: 480px) {
+  .login { padding-top: var(--sp-8); }
+}

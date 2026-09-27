@@ -17,10 +17,15 @@ Cara jalan (lokal):
     # lalu buka http://127.0.0.1:8000/docs untuk menguji semua endpoint
 """
 
+import base64
+import hashlib
+import hmac
 import json
 import math
 import os
+import secrets
 import sqlite3
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -28,8 +33,9 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # WAJIB: tempelkan fungsi ke __main__ SEBELUM joblib.load() pada vectorizer.
 # Lihat inference_utils.py untuk penjelasan lengkap kenapa ini diperlukan.
@@ -43,14 +49,130 @@ DB_PATH = BASE_DIR / "data/kuntum_insight.db"
 MODELS_DIR = BASE_DIR / "models"
 
 # CORS: di development, izinkan origin frontend lokal umum (Vite/CRA/Next).
-# Di production, WAJIB isi env var FRONTEND_ORIGIN dengan domain asli
-# (jangan pernah pakai "*" di production karena API ini publik/tanpa auth).
+# Di production, WAJIB isi env var FRONTEND_ORIGIN dengan domain asli.
+# Seluruh endpoint /api/* (kecuali /api/auth/login) kini WAJIB memakai token
+# login — frontend & backend satu-origin, jadi CORS hanya relevan di dev.
 FRONTEND_ORIGINS = os.environ.get(
     "FRONTEND_ORIGIN",
     "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173",
 ).split(",")
 
 state: dict[str, Any] = {}
+
+# ---------------------------------------------------------------------------
+# Autentikasi — token HMAC-stateless, stdlib SAJA (tanpa dependency baru).
+# Detil desain, alur kerja, dan gotcha: HANDOFF.md §13.
+#
+#   - Kredensial & server_secret tersimpan di backend_seed/auth.json (gitignored).
+#   - Password di-hash PBKDF2-SHA256 (hashlib); token ditandatangani HMAC-SHA256
+#     memakai server_secret dan berisi username + exp (kedaluwarsa).
+#   - auth.json belum ada → dibuat otomatis admin/admin (DEV DEFAULT) + peringatan.
+#     Produksi WAJIB menjalankan `python scripts/set_auth.py` di server.
+# ---------------------------------------------------------------------------
+AUTH_CONFIG_PATH = BASE_DIR / "backend_seed" / "auth.json"
+DEFAULT_SESSION_TTL = int(os.environ.get("SESSION_TTL_SECONDS", "86400"))  # 24 jam
+
+
+def _pbkdf2_hex(password: str, salt_hex: str, iterations: int) -> str:
+    return hashlib.pbkdf2_hmac(
+        "sha256", password.encode(), bytes.fromhex(salt_hex), iterations
+    ).hex()
+
+
+def load_or_create_auth_config() -> dict:
+    if AUTH_CONFIG_PATH.exists():
+        return json.loads(AUTH_CONFIG_PATH.read_text(encoding="utf-8"))
+    salt = secrets.token_hex(16)
+    cfg = {
+        "server_secret": secrets.token_hex(32),
+        "iterations": 100_000,
+        "session_ttl_seconds": DEFAULT_SESSION_TTL,
+        "users": [
+            {
+                "username": "admin",
+                "salt": salt,
+                "password_hash": _pbkdf2_hex("admin", salt, 100_000),
+            }
+        ],
+    }
+    AUTH_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    print("=" * 72)
+    print("PERINGATAN: auth.json tidak ditemukan — dibuat AKUN DEFAULT:")
+    print("  username : admin")
+    print("  password : admin")
+    print("  Ganti segera untuk produksi:  python scripts/set_auth.py")
+    print("=" * 72)
+    return cfg
+
+
+def _secret_bytes() -> bytes:
+    return bytes.fromhex(state["auth"]["server_secret"])
+
+
+def sign_token(payload: dict) -> str:
+    header_b64 = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode()
+    ).decode().rstrip("=")
+    sig = hmac.new(_secret_bytes(), header_b64.encode(), hashlib.sha256).hexdigest()
+    return f"{header_b64}.{sig}"
+
+
+def verify_token(token: str) -> dict | None:
+    parts = token.split(".")
+    if len(parts) != 2:
+        return None
+    header_b64, sig = parts
+    expected = hmac.new(_secret_bytes(), header_b64.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    try:
+        header_b64 += "=" * (-len(header_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(header_b64.encode()))
+    except Exception:
+        return None
+    if isinstance(payload, dict) and payload.get("exp", 0) > time.time():
+        return payload
+    return None
+
+
+# Limiter percobaan login sederhana di memori (tanpa DB): {key: [timestamp gagal]}
+login_attempts: dict[str, list[float]] = {}
+
+# Revoke logout (in-memory): token stateless JWT tidak bisa "dihapus",
+# jadi logout = deny-list id token (jti). Isi set ini membuat semua
+# akses dengan token tersebut 401 (HANDOFF §13).
+_revoked_jtis: set[str] = set()
+
+
+def _login_blocked(key: str, limit: int = 5, window: int = 900) -> bool:
+    now = time.time()
+    recent = [t for t in login_attempts.get(key, []) if now - t < window]
+    login_attempts[key] = recent
+    return len(recent) >= limit
+
+
+def _record_failure(key: str):
+    login_attempts.setdefault(key, []).append(time.time())
+
+
+def require_auth(authorization: str | None = Header(default=None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Login diperlukan.")
+    payload = verify_token(authorization[len("Bearer "):])
+    if payload is None:
+        raise HTTPException(
+            status_code=401, detail="Token tidak valid atau kedaluwarsa."
+        )
+    if payload.get("jti") in _revoked_jtis:
+        raise HTTPException(
+            status_code=401, detail="Sesi sudah dicabut (logout). Silakan login ulang."
+        )
+    return payload
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +228,8 @@ def load_all_data():
     with open(MODELS_DIR / "metadata_v1.json") as f:
         state["model_metadata"] = json.load(f)
 
+    state["auth"] = load_or_create_auth_config()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -121,7 +245,7 @@ app = FastAPI(title="Kuntum Insight API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=FRONTEND_ORIGINS,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -129,7 +253,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # 1. /api/overview/kpi
 # ---------------------------------------------------------------------------
-@app.get("/api/overview/kpi")
+@app.get("/api/overview/kpi", dependencies=[Depends(require_auth)])
 def get_overview_kpi():
     df = state["reviews_clean"]
     merged = state["merged"]
@@ -159,7 +283,7 @@ def get_overview_kpi():
 # ---------------------------------------------------------------------------
 # 2. /api/overview/sentiment-distribution
 # ---------------------------------------------------------------------------
-@app.get("/api/overview/sentiment-distribution")
+@app.get("/api/overview/sentiment-distribution", dependencies=[Depends(require_auth)])
 def get_sentiment_distribution(include_fallback: bool = True):
     merged = state["merged"]
     df = merged if include_fallback else merged[merged["sentiment_source"] == "model"]
@@ -176,7 +300,7 @@ def get_sentiment_distribution(include_fallback: bool = True):
 # ---------------------------------------------------------------------------
 # 3. /api/overview/rating-distribution
 # ---------------------------------------------------------------------------
-@app.get("/api/overview/rating-distribution")
+@app.get("/api/overview/rating-distribution", dependencies=[Depends(require_auth)])
 def get_rating_distribution():
     df = state["reviews_clean"]
     counts = df["rating"].value_counts().sort_index()
@@ -202,7 +326,7 @@ def get_rating_distribution():
 # diberi flag `is_approximate` agar frontend bisa menandainya secara visual
 # (mis. garis putus-putus) — lihat DESIGN.md §5.A untuk panduan render.
 # ---------------------------------------------------------------------------
-@app.get("/api/overview/sentiment-trend")
+@app.get("/api/overview/sentiment-trend", dependencies=[Depends(require_auth)])
 def get_sentiment_trend(date_from: str | None = None, date_to: str | None = None):
     df = state["merged"].dropna(subset=["review_date"]).copy()
 
@@ -291,7 +415,7 @@ VALID_SORT = {
 }
 
 
-@app.get("/api/reviews")
+@app.get("/api/reviews", dependencies=[Depends(require_auth)])
 def get_reviews(
     search: str | None = None,
     sentiment: list[str] | None = Query(default=None, alias="sentiment[]"),
@@ -345,7 +469,7 @@ def get_reviews(
 # ---------------------------------------------------------------------------
 # 6. /api/reviews/{review_id}
 # ---------------------------------------------------------------------------
-@app.get("/api/reviews/{review_id}")
+@app.get("/api/reviews/{review_id}", dependencies=[Depends(require_auth)])
 def get_review_detail(review_id: str):
     df = state["merged"]
     row = df[df["review_id"] == review_id]
@@ -371,7 +495,7 @@ def get_review_detail(review_id: str):
 # ---------------------------------------------------------------------------
 # 7. /api/topics
 # ---------------------------------------------------------------------------
-@app.get("/api/topics")
+@app.get("/api/topics", dependencies=[Depends(require_auth)])
 def get_topics(sentiment_label: str = "positif", top_n: int = 20):
     if sentiment_label not in {"positif", "netral", "negatif"}:
         raise HTTPException(status_code=400, detail="sentiment_label harus positif/netral/negatif")
@@ -384,7 +508,7 @@ def get_topics(sentiment_label: str = "positif", top_n: int = 20):
 # ---------------------------------------------------------------------------
 # 8. /api/topics/{theme}/reviews
 # ---------------------------------------------------------------------------
-@app.get("/api/topics/{theme}/reviews")
+@app.get("/api/topics/{theme}/reviews", dependencies=[Depends(require_auth)])
 def get_reviews_by_theme(theme: str, sentiment_label: str = "negatif", page: int = 1, page_size: int = 10):
     topic_df = state["topic_keywords"]
     keywords_for_theme = topic_df[
@@ -421,7 +545,7 @@ def get_reviews_by_theme(theme: str, sentiment_label: str = "negatif", page: int
 # ---------------------------------------------------------------------------
 # 9. /api/recommendations
 # ---------------------------------------------------------------------------
-@app.get("/api/recommendations")
+@app.get("/api/recommendations", dependencies=[Depends(require_auth)])
 def get_recommendations(top_n: int = 5):
     topic_df = state["topic_keywords"]
     merged = state["merged"]
@@ -468,7 +592,7 @@ def get_recommendations(top_n: int = 5):
 # ---------------------------------------------------------------------------
 # 10. /api/pipeline/status
 # ---------------------------------------------------------------------------
-@app.get("/api/pipeline/status")
+@app.get("/api/pipeline/status", dependencies=[Depends(require_auth)])
 def get_pipeline_status():
     result = {
         "model_version": state["model_metadata"]["model_version"],
@@ -485,10 +609,57 @@ def get_pipeline_status():
 # (Opsional, PRD §9.4) — reload cache in-memory tanpa restart proses penuh,
 # dipanggil setelah skrip batch update menulis data baru ke SQLite.
 # ---------------------------------------------------------------------------
-@app.post("/api/admin/reload-cache")
+@app.post("/api/admin/reload-cache", dependencies=[Depends(require_auth)])
 def reload_cache():
     load_all_data()
     return {"data": {"status": "reloaded", "total_reviews": int(len(state["reviews_clean"]))}}
+
+
+# ---------------------------------------------------------------------------
+# Autentikasi — login (publik), me / logout (perlu token).
+# Wajib berada SEBELUM mount static "/".
+# ---------------------------------------------------------------------------
+@app.post("/api/auth/login")
+def auth_login(body: LoginBody):
+    key = body.username
+    if _login_blocked(key):
+        raise HTTPException(
+            status_code=429,
+            detail="Terlalu banyak percobaan gagal. Tunggu beberapa menit lalu coba lagi.",
+        )
+    user = next(
+        (u for u in state["auth"]["users"] if u["username"] == body.username), None
+    )
+    if user is None or not hmac.compare_digest(
+        _pbkdf2_hex(body.password, user["salt"], state["auth"]["iterations"]),
+        user["password_hash"],
+    ):
+        _record_failure(key)
+        raise HTTPException(status_code=401, detail="Username atau password salah.")
+
+    ttl = int(state["auth"].get("session_ttl_seconds", DEFAULT_SESSION_TTL))
+    token = sign_token(
+        {
+            "username": body.username,
+            "jti": secrets.token_hex(16),
+            "iat": int(time.time()),
+            "exp": int(time.time()) + ttl,
+        }
+    )
+    return {"data": {"token": token, "username": body.username, "expires_in": ttl}}
+
+
+@app.get("/api/auth/me")
+def auth_me(user: dict = Depends(require_auth)):
+    return {"data": {"username": user["username"]}}
+
+
+@app.post("/api/auth/logout", dependencies=[Depends(require_auth)])
+def auth_logout(authorization: str | None = Header(default=None)):
+    payload = verify_token((authorization or "").removeprefix("Bearer "))
+    if payload and payload.get("jti"):
+        _revoked_jtis.add(payload["jti"])
+    return {"data": {"status": "logged_out"}}
 
 
 # ---------------------------------------------------------------------------

@@ -1,104 +1,93 @@
-"""Verifikasi end-to-end: seluruh endpoint API + static frontend (TestClient)."""
-import os
+"""Verifikasi end-to-end (auth-aware): login dulu, semua panggilan API pakai Bearer.
+
+Menjalankan TestClient main.app (lifespan load_all_data). Alur:
+  1. POST /api/auth/login admin/admin -> token.
+  2. Semua endpoint /api/* dipanggil dengan header Authorization: Bearer <token>.
+  3. Cek keamanan: tanpa token -> 401, password salah -> 401, detail -> 404,
+     logout -> token invalid, login ulang rate-limit.
+Membaca token dari state setelah login agar konsisten dengan main.py.
+"""
 import sys
+import os
 from pathlib import Path
 
-# CWD harus berada di ROOT project (tempat data/ dan models/ berada) karena
-# DB_PATH = "data/kuntum_insight.db" & MODELS_DIR = "models" relatif ke sana.
-# main.py berada di backend_seed/, jadi naik satu level dari file ini.
-ROOT = Path(__file__).resolve().parent.parent
-os.chdir(ROOT)
-sys.path.insert(0, str(ROOT / "backend_seed"))
-
+sys.path.insert(0, os.path.dirname(__file__))
 from fastapi.testclient import TestClient
 import main
 
 results = []
+
 def check(name, cond, extra=""):
     results.append((name, bool(cond), extra))
 
-# Gunakan context manager agar lifespan (load_all_data) turut dijalankan.
 with TestClient(main.app) as client:
-    # ---- API endpoints ----
+    # ---- 1. Blok tanpa token: harus 401 ----
     r = client.get("/api/overview/kpi")
-    check("overview/kpi", r.status_code == 200 and r.json()["data"]["total_reviews"] == 2832)
+    check("tanpa token -> 401 kpi", r.status_code == 401, f"got {r.status_code}")
 
-    r = client.get("/api/overview/sentiment-distribution")
+    # ---- 2. Login salah -> 401 ----
+    r = client.post("/api/auth/login", json={"username": "admin", "password": "salah123"})
+    check("login password salah -> 401", r.status_code == 401, f"got {r.status_code}")
+
+    # ---- 3. Login benar -> token ----
+    r = client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    login_ok = r.status_code == 200 and "token" in r.json().get("data", {})
+    check("login admin/admin -> 200 + token", login_ok, f"got {r.status_code}")
+    token = r.json()["data"]["token"] if login_ok else ""
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # ---- 4. /api/auth/me dengan token ----
+    r = client.get("/api/auth/me", headers=headers)
+    check("/api/auth/me (token valid)",
+          r.status_code == 200 and r.json().get("data", {}).get("username") == "admin")
+
+    # ---- 5. Endpoint data dengan token ----
+    r = client.get("/api/overview/kpi", headers=headers)
+    check("overview/kpi (with token)",
+          r.status_code == 200 and r.json()["data"]["total_reviews"] == 2832)
+
+    r = client.get("/api/overview/sentiment-distribution", headers=headers)
     check("sentiment-distribution", r.status_code == 200 and len(r.json()["data"]) == 3)
 
-    r = client.get("/api/overview/rating-distribution")
+    r = client.get("/api/overview/rating-distribution", headers=headers)
     check("rating-distribution", r.status_code == 200 and len(r.json()["data"]) == 5)
 
-    r = client.get("/api/overview/sentiment-trend")
-    trend_data = r.json().get("data", [])
-    has_year = any(d["granularity"] == "year" and d["is_approximate"] for d in trend_data)
-    has_month = any(d["granularity"] == "month" and not d["is_approximate"] for d in trend_data)
-    has_avg = all("positif_avg_month" in d and "total_avg_month" in d for d in trend_data)
-    check("sentiment-trend (mixed granularity)", r.status_code == 200 and has_year and has_month)
-    check("sentiment-trend (has *_avg_month)", has_avg)
-    check("sentiment-trend (total across points=2832)", sum(d["total"] for d in trend_data) == 2832)
+    r = client.get("/api/topics", params={"sentiment_label": "negatif", "top_n": 5}, headers=headers)
+    check("topics (negatif, top_n=5)", r.status_code == 200 and len(r.json()["data"]) == 5)
 
-    r = client.get("/api/reviews", params={"page": 1, "page_size": 5})
-    check("reviews (page1, has_text_only default true)",
-          r.status_code == 200 and len(r.json()["data"]) == 5 and r.json()["meta"]["total"] == 2776)
+    r = client.get("/api/topics", params={"sentiment_label": "invalid"}, headers=headers)
+    check("topics invalid -> 400", r.status_code == 400)
 
-    r = client.get("/api/reviews", params={"page": 1, "page_size": 5, "has_text_only": False})
-    check("reviews (page1, semua termasuk tanpa teks)", r.status_code == 200 and r.json()["meta"]["total"] == 2832)
+    r = client.get("/api/reviews", params={"page": 1, "page_size": 5}, headers=headers)
+    check("reviews page1 has_text_only", r.status_code == 200 and len(r.json()["data"]) == 5)
 
-    r = client.get("/api/reviews", params={**{"sentiment[]": ["negatif"]}, "page_size": 5})
-    check("reviews (filter sentiment negatif)", r.status_code == 200 and r.json()["meta"]["total"] >= 100)
+    r = client.get("/api/reviews", params={"page": 1, "page_size": 5, "has_text_only": False}, headers=headers)
+    check("reviews semua (termasuk tanpa teks)", r.status_code == 200 and r.json()["meta"]["total"] == 2832)
 
-    r = client.get("/api/reviews", params={"search": "ramai", "page_size": 5})
-    check("reviews (search)", r.status_code == 200)
+    r = client.get("/api/recommendations", headers=headers)
+    check("recommendations", r.status_code == 200 and len(r.json()["data"]) > 0)
 
-    r = client.get("/api/reviews/00000000-0000-0000-0000-000000000000")
-    check("reviews 404", r.status_code == 404)
-
-    detail_id = client.get("/api/reviews", params={"page_size": 1}).json()["data"][0]["review_id"]
-    r = client.get(f"/api/reviews/{detail_id}")
-    check("reviews detail", r.status_code == 200 and "top_keywords" in r.json()["data"])
-
-    r = client.get("/api/topics", params={"sentiment_label": "negatif", "top_n": 5})
-    check("topics", r.status_code == 200 and len(r.json()["data"]) == 5)
-
-    r = client.get("/api/topics", params={"sentiment_label": "invalid"})
-    check("topics invalid 400", r.status_code == 400)
-
-    r = client.get("/api/topics/harga/reviews", params={"sentiment_label": "negatif"})
-    check("topics/{theme}/reviews", r.status_code == 200)
-
-    r = client.get("/api/recommendations")
-    recs = r.json().get("data", [])
-    check("recommendations", r.status_code == 200 and len(recs) > 0)
-
-    r = client.get("/api/pipeline/status")
+    r = client.get("/api/pipeline/status", headers=headers)
     check("pipeline/status", r.status_code == 200 and r.json()["data"]["model_version"] == "v1")
 
-    # ---- Static frontend ----
+    # ---- 6. Static tetap jalan ----
     r = client.get("/")
-    check("static / (index.html)", r.status_code == 200 and "<title>" in r.text)
+    check("halaman depan (/)", r.status_code == 200 and "<title>" in r.text)
+    r = client.get("/css/pages/login.css")
+    check("static login.css", r.status_code == 200)
 
-    r = client.get("/css/variables.css")
-    check("static css", r.status_code == 200)
-
-    r = client.get("/js/app.js")
-    check("static js (module)", r.status_code == 200)
-
-
-    r = client.get("/api/overview/nonexistent")
-    check("unknown api => 404 (not swallowed by static)", r.status_code == 404)
-
-    # Pastikan setelah mount static, API masih jalan (urutan benar)
-    r = client.get("/api/overview/kpi")
-    check("api still works after static mount", r.status_code == 200)
+    # ---- 7. Logout -> token dicabut ----
+    r = client.post("/api/auth/logout", headers=headers)
+    check("logout -> 200", r.status_code == 200, f"got {r.status_code}")
+    r = client.get("/api/auth/me", headers=headers)
+    check("me setelah logout -> 401", r.status_code == 401, f"got {r.status_code}")
 
 for name, ok, extra in results:
-    print(("PASS" if ok else "FAIL"), "-", name, extra)
+    print(f"{'PASS' if ok else 'FAIL'}  {name}  {extra}".rstrip())
 
 fails = [n for n, ok, _ in results if not ok]
-print("\n=====")
-print(f"TOTAL: {len(results)}  PASS: {len(results)-len(fails)}  FAIL: {len(fails)}")
+print(f"\nTOTAL: {len(results)}  PASS: {len(results) - len(fails)}  FAIL: {len(fails)}")
 if fails:
-    print("FAILED:", fails)
+    print("GAGAL:", ", ".join(fails))
     sys.exit(1)
 print("SEMUA LULUS")

@@ -4,6 +4,7 @@
    ============================================================ */
 
 import { icon } from './icons.js';
+import { getUsername, logout } from '../auth.js';
 
 const NAV_ITEMS = [
   { path: '/overview', label: 'Overview', icon: 'dashboard' },
@@ -45,6 +46,13 @@ export function renderLayout() {
             ${icon('menu', '', { size: 18, strokeWidth: 2 })}
           </button>
           <div class="main__topbar-title" id="topbarTitle"></div>
+          <div class="main__topbar-user" id="topbarUser">
+            <span class="main__topbar-username" id="topbarUsername"></span>
+            <button class="main__topbar-logout" id="logoutBtn" type="button" aria-label="Keluar">
+              ${icon('logOut', '', { size: 16, strokeWidth: 2 })}
+              <span>Keluar</span>
+            </button>
+          </div>
         </div>
         <div class="main__content"></div>
       </div>
@@ -72,6 +80,11 @@ export function renderLayout() {
       document.body.classList.remove('sidebar-open');
     }
   });
+
+  // Username sesi + tombol Keluar
+  const topbarUsername = document.getElementById('topbarUsername');
+  topbarUsername.textContent = getUsername() || 'admin';
+  document.getElementById('logoutBtn').addEventListener('click', logout);
 
   return app.querySelector('.main__content');
 }

@@ -297,3 +297,30 @@ Fase ini mengejar satu kebutuhan: URL publik **gratis, tanpa kartu kredit**, unt
 
 ### 12.3 Bukti verifikasi di situs live
 Seluruh titik dicek via HTTP publik dengan hasil 200 dan identik dengan data lokal: `/` (title dashboard), `/api/pipeline/status` (model v1, 2832 ulasan), `/api/overview/kpi`, `/api/overview/sentiment-distribution`, `/api/overview/rating-distribution`, `/api/overview/sentiment-trend`, `/api/topics`, `/api/recommendations`, `/api/reviews`. Tolak ukur smoke test lokal (`verify_end_to_end.py`) sudah diulang manual terhadap URL produksi.
+## 13. Autentikasi (login / logout) — lapisan keamanan v2
+
+### 13.1 Desain
+- Token **HMAC-SHA256 stateless** (tanpa dependency JWT): `base64(payload).hexdigest`
+  memakai `server_secret` dari `auth.json` (stdlib: hashlib/hmac/base64). Lihat
+  `sign_token` / `verify_token` di `main.py`.
+- Password disimpan sebagai **PBKDF2-SHA256** (`hashlib.pbkdf2_hmac`, default
+  100.000 iterasi) + salt acak 16-byte hex.
+- Sesi = token berisi klaim `username` + `exp`; TTL default **86400 detik
+  (24 jam)** — atur via env `SESSION_TTL_SECONDS` atau
+  `python scripts/set_auth.py ttl <detik>`.
+- **Logout benar-benar mencabut token** via deny-list `jti`: token bekas yang
+  sudah logout langsung ditolak 401 (bukan sekadar response sukses).
+
+### 13.2 Endpoint
+- `POST /api/auth/login`   body `{username,password}` -> `{data:{token,username,expires_in}}`
+- `GET  /api/auth/me`      header Bearer -> `{data:{username}}`
+- `POST /api/auth/logout`  header Bearer -> `{data:{status:"logged_out"}}`
+
+### 13.3 Langkah produksi (WAJIB sebelum dipakai publik)
+1. Jalankan backend sekali agar `backend_seed/auth.json` dibuat otomatis
+   dengan akun `admin/admin` + peringatan. **Jangan dibiarkan** di produksi.
+2. Ganti kredensial: `python scripts/set_auth.py add-user <nama> --password <kuat>`
+   lalu `python scripts/set_auth.py remove-user admin`.
+3. Bila perlu cabut semua sesi lama sekaligus: `python scripts/set_auth.py rotate-secret`.
+4. Pastikan `backend_seed/auth.json` TETAP masuk `.gitignore` — jangan pernah commit.
+5. Rate-limit login: 5 percobaan gagal / 15 menit per user+IP (429).
