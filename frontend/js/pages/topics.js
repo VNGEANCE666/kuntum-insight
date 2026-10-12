@@ -17,6 +17,7 @@ let activeKeyword = null;
 // tema yang sudah terkonfirmasi di HANDOFF.md §8 / topik kustom).
 const KNOWN_THEMES = {
   harga: 'Harga',
+  tiket_masuk: 'Tiket / Biaya Masuk',
   fasilitas: 'Fasilitas',
   makanan_kuliner: 'Makanan & Kuliner',
   akses_lalulintas: 'Akses & Lalu Lintas',
@@ -31,6 +32,9 @@ export const topicsPage = {
       <div class="page-header">
         <h1>Topic & Keyword Insights</h1>
         <p class="page-header__subtitle">Kata kunci dan tema dominan dari setiap kelas sentimen.</p>
+      </div>
+      <div class="card info-note-card">
+        <p class="info-note-card__text">${icon('info', 'info-note-card__icon')} Satu tema dapat muncul di beberapa kelas sentimen — skor TF-IDF dihitung terpisah untuk tiap kelas, dan ulasan positif/negatif memang sering membahas aspek yang sama (mis. "hewan" bisa dipuji sekaligus dikeluhkan).</p>
       </div>
       <div class="topic-tabs">
         ${['positif', 'netral', 'negatif'].map((s) => `

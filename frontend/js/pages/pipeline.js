@@ -79,6 +79,16 @@ export const pipelinePage = {
           ${pipelineStep(true, 'Inference Batch', 'label tersimpan di sentiment_results', 'Selesai')}
           ${pipelineStep(true, 'Serving API', 'FastAPI · data in-memory', 'Aktif')}
         </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card__title">Catatan Metodologi — Rating vs. Sentimen</div>
+        <ul class="method-note">
+          <li>Label sentimen berasal dari <strong>weak supervision berbasis rating</strong> (4–5 → Positif, 3 → Netral, 1–2 → Negatif) sebagai label awal training — karena dataset tidak memiliki label manual.</li>
+          <li>Rating <strong>tidak dipakai sebagai fitur</strong> model: prediksi dilakukan semata dari teks ulasan (TF-IDF). Korelasi rating–sentimen ±0,70 (Pearson) — berkorelasi tapi tidak sempurna.</li>
+          <li>Sebanyak <strong>384 ulasan (13,6%)</strong> mendapat label dari rating langsung (<em>rating_fallback</em>) karena tidak berteks atau terlalu pendek (&lt; 3 token).</li>
+          <li>Ada <strong>114 ulasan rating 4–5 yang diprediksi negatif/netral</strong> oleh model — bukti model menangkap isi teks di luar rating.</li>
+        </ul>
       </div>`;
   },
 };

@@ -1,4 +1,4 @@
-import { getToken, clearToken, redirectToLogin } from './auth.js';
+import { getToken, clearToken, redirectToLogin, handleUnauthorized } from './auth.js';
 
 /* ============================================================
    API Service — Semua fetch memakai path RELATIF (satu origin

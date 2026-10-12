@@ -12,7 +12,16 @@ import {
   SENTIMENT_LABELS, capitalize, escapeHtml, useSharedTicks,
 } from '../components/chart-utils.js';
 
+export const PERIODS = {
+  '5y': { label: '5 Tahun Terakhir', params: { date_from: '2022-01-01' } },
+  '2y': { label: '2 Tahun Terakhir', params: { date_from: '2024-01-01' } },
+  'all': { label: 'Semua Waktu', params: {} },
+};
+export const DEFAULT_PERIOD = '5y';
+
 export const overviewPage = {
+  activePeriod: DEFAULT_PERIOD,
+
   render() {
     return `
       <div class="page-header">
@@ -20,9 +29,18 @@ export const overviewPage = {
           <div class="page-header__subtitle">Kuntum Farmfield · Bogor</div>
           <h1 class="page-header__title">Overview — Ringkasan Sentimen</h1>
         </div>
-        <button class="btn btn--primary print-btn" onclick="window.print()" title="Cetak atau simpan sebagai PDF">
-          ${icon('printer', 'ki-ico--inline')} Cetak Laporan
-        </button>
+        <div class="page-header__actions">
+          <label class="period-select" for="ov-period">
+            <span class="period-select__label">Periode</span>
+            <select id="ov-period" class="period-select__control">
+              ${Object.entries(PERIODS).map(([k, p]) => `
+                <option value="${k}" ${k === this.activePeriod ? 'selected' : ''}>${p.label}</option>`).join('')}
+            </select>
+          </label>
+          <button class="btn btn--primary print-btn" onclick="window.print()" title="Cetak atau simpan sebagai PDF">
+            ${icon('printer', 'ki-ico--inline')} Cetak Laporan
+          </button>
+        </div>
       </div>
       <div id="ov-kpi">${skel.kpiRow(6)}</div>
       <div class="grid grid--2col" style="margin-top:16px">
@@ -34,7 +52,7 @@ export const overviewPage = {
           Tren Sentimen Bulanan
           <span class="info-note" tabindex="0" aria-label="Tentang tren sentimen">
             ${icon('info', 'info-note__icon')}
-            <span class="info-note__tip">Data sebelum 2024-01 adalah estimasi tahunan (Google Maps tak menyimpan tanggal presisi untuk ulasan lama); titik "≈" di tooltip = estimasi tahunan (garis putus-putus).</span>
+            <span class="info-note__tip" id="ov-trend-note-tip"></span>
           </span>
         </div>
         ${skel.chart()}
@@ -44,6 +62,32 @@ export const overviewPage = {
 
   async mount(root) {
     destroyCharts();
+    this.activePeriod = DEFAULT_PERIOD;
+    this._bindPeriod(root);
+    await this._loadAll();
+  },
+
+  _periodParams() {
+    return PERIODS[this.activePeriod] ? PERIODS[this.activePeriod].params : {};
+  },
+
+  _periodLabel() {
+    return PERIODS[this.activePeriod] ? PERIODS[this.activePeriod].label : '';
+  },
+
+  _bindPeriod(root) {
+    const sel = root.querySelector('#ov-period');
+    if (!sel) return;
+    sel.addEventListener('change', async () => {
+      this.activePeriod = sel.value;
+      this._updateTrendNote();
+      await this._loadAll();
+    });
+  },
+
+  async _loadAll() {
+    destroyCharts();
+    this._updateTrendNote();
     await Promise.all([
       this._loadKpi(),
       this._loadSentimentDistribution(),
@@ -52,15 +96,26 @@ export const overviewPage = {
     ]);
   },
 
+  _updateTrendNote() {
+    const tip = document.getElementById('ov-trend-note-tip');
+    if (!tip) return;
+    if (this.activePeriod === 'all') {
+      tip.textContent = 'Menampilkan seluruh periode. Ulasan lama cenderung hanya punya tanggal estimasi tahunan (Google Maps tidak menyimpan tanggal presisi untuk ulasan lama) — garis putus-putus & titik "≈" menandai estimasi.';
+    } else {
+      tip.textContent = `Menampilkan ${this._periodLabel()} (sejak ${PERIODS[this.activePeriod].params.date_from}). Ulasan lama cenderung hanya punya tanggal estimasi tahunan (Google Maps tidak menyimpan tanggal presisi) — garis putus-putus & titik "≈" menandai estimasi. Seluruh 2.832 ulasan tetap dipakai untuk pelatihan model.`;
+    }
+  },
+
   async _loadKpi() {
     try {
-      let data = getCache('/api/overview/kpi');
+      const cacheKey = this._periodKey('/api/overview/kpi');
+      let data = getCache(cacheKey);
       if (!data) {
-        const res = await apiGet('/api/overview/kpi');
+        const res = await apiGet('/api/overview/kpi', this._periodParams());
         data = res.data;
-        setCache('/api/overview/kpi', data, 60000);
+        setCache(cacheKey, data, 60000);
       }
-      renderKpi(document.getElementById('ov-kpi'), data);
+      renderKpi(document.getElementById('ov-kpi'), data, this._periodLabel(), this.activePeriod);
     } catch (e) {
       renderError(document.getElementById('ov-kpi'), e);
     }
@@ -69,7 +124,7 @@ export const overviewPage = {
   async _loadSentimentDistribution() {
     const el = document.getElementById('ov-sentimen');
     try {
-      const res = await apiGet('/api/overview/sentiment-distribution');
+      const res = await apiGet('/api/overview/sentiment-distribution', this._periodParams());
       const items = res.data || [];
       renderSentimentDonut(el, items);
     } catch (e) {
@@ -80,7 +135,7 @@ export const overviewPage = {
   async _loadRatingDistribution() {
     const el = document.getElementById('ov-rating');
     try {
-      const res = await apiGet('/api/overview/rating-distribution');
+      const res = await apiGet('/api/overview/rating-distribution', this._periodParams());
       const items = res.data || [];
       renderRatingBar(el, items);
     } catch (e) {
@@ -91,7 +146,7 @@ export const overviewPage = {
   async _loadTrend() {
     const el = document.getElementById('ov-trend');
     try {
-      const res = await apiGet('/api/overview/sentiment-trend');
+      const res = await apiGet('/api/overview/sentiment-trend', this._periodParams());
       const items = res.data || [];
       const meta = res.meta || {};
       renderTrendChart(el, items, meta);
@@ -99,12 +154,21 @@ export const overviewPage = {
       renderError(el, e);
     }
   },
+
+  _periodKey(endpoint) {
+    const p = PERIODS[this.activePeriod] ? PERIODS[this.activePeriod].params : {};
+    const q = new URLSearchParams(p).toString();
+    return q ? `${endpoint}?${q}` : endpoint;
+  },
 };
 
 /* ---------- KPI ---------- */
-function renderKpi(el, kpi) {
+function renderKpi(el, kpi, periodLabel, activePeriod) {
   const r = kpi.sentiment_pct || {};
   const most = kpi.most_liked_review;
+  const scopeNote = activePeriod === 'all'
+    ? `Seluruh waktu · ${kpi.total_reviews} ulasan`
+    : `${periodLabel} · ${kpi.total_reviews} ulasan dalam rentang (dari 2.832 total)`;
 
   const kpis = [
     { label: 'Total Ulasan', value: formatNumber(kpi.total_reviews), icon: 'count', sub: 'ulasan terhimpun' },
@@ -117,6 +181,7 @@ function renderKpi(el, kpi) {
   ];
 
   el.innerHTML = `
+    <div style="font-size:var(--font-size-small);color:var(--color-text-muted);margin-bottom:10px">${escapeHtml(scopeNote)}</div>
     <div class="grid grid--kpi">
       ${kpis.map((k) => `
         <div class="card card--hover kpi" title="${escapeHtml(k.label)}">

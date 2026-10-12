@@ -202,6 +202,21 @@ def df_to_records(df: pd.DataFrame) -> list[dict]:
     return sanitize(df.to_dict(orient="records"))
 
 
+DATE_FILTER_HELP = (
+    "Format ISO (YYYY-MM-DD atau YYYY-MM-DD HH:MM:SS). Jika hanya date_from atau date_to "
+    "yang diisi, sisi lainnya tidak dibatasi."
+)
+
+
+def _apply_date_filter(df: pd.DataFrame, date_from: str | None = None, date_to: str | None = None) -> pd.DataFrame:
+    """Filter baris berdasarkan review_date (UTC). Input luar harus sudah memiliki kolom review_date."""
+    if date_from:
+        df = df[df["review_date"] >= pd.Timestamp(date_from, tz="UTC")]
+    if date_to:
+        df = df[df["review_date"] <= pd.Timestamp(date_to, tz="UTC")]
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Startup / shutdown — muat data & artefak SEKALI ke memori (PRD §9.2)
 # ---------------------------------------------------------------------------
@@ -254,9 +269,12 @@ app.add_middleware(
 # 1. /api/overview/kpi
 # ---------------------------------------------------------------------------
 @app.get("/api/overview/kpi", dependencies=[Depends(require_auth)])
-def get_overview_kpi():
-    df = state["reviews_clean"]
-    merged = state["merged"]
+def get_overview_kpi(
+    date_from: str | None = Query(default=None, description=DATE_FILTER_HELP),
+    date_to: str | None = Query(default=None, description=DATE_FILTER_HELP),
+):
+    df = _apply_date_filter(state["reviews_clean"], date_from, date_to)
+    merged = _apply_date_filter(state["merged"], date_from, date_to)
 
     sentiment_pct = merged["sentiment_label"].value_counts(normalize=True).round(4).to_dict()
     most_liked = df.loc[df["likes"].idxmax()] if df["likes"].notna().any() and df["likes"].max() > 0 else None
@@ -284,8 +302,12 @@ def get_overview_kpi():
 # 2. /api/overview/sentiment-distribution
 # ---------------------------------------------------------------------------
 @app.get("/api/overview/sentiment-distribution", dependencies=[Depends(require_auth)])
-def get_sentiment_distribution(include_fallback: bool = True):
-    merged = state["merged"]
+def get_sentiment_distribution(
+    include_fallback: bool = True,
+    date_from: str | None = Query(default=None, description=DATE_FILTER_HELP),
+    date_to: str | None = Query(default=None, description=DATE_FILTER_HELP),
+):
+    merged = _apply_date_filter(state["merged"], date_from, date_to)
     df = merged if include_fallback else merged[merged["sentiment_source"] == "model"]
 
     counts = df["sentiment_label"].value_counts()
@@ -301,8 +323,11 @@ def get_sentiment_distribution(include_fallback: bool = True):
 # 3. /api/overview/rating-distribution
 # ---------------------------------------------------------------------------
 @app.get("/api/overview/rating-distribution", dependencies=[Depends(require_auth)])
-def get_rating_distribution():
-    df = state["reviews_clean"]
+def get_rating_distribution(
+    date_from: str | None = Query(default=None, description=DATE_FILTER_HELP),
+    date_to: str | None = Query(default=None, description=DATE_FILTER_HELP),
+):
+    df = _apply_date_filter(state["reviews_clean"], date_from, date_to)
     counts = df["rating"].value_counts().sort_index()
     result = [{"rating": float(rating), "count": int(count)} for rating, count in counts.items()]
     return {"data": result}

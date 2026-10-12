@@ -72,6 +72,14 @@ Dokumen ini berisi panduan desain visual dan arsitektur UI untuk proyek "Kuntum 
 
 - **Visual:** Kotak putih dengan sudut membulat (*rounded corners*) dan bayangan halus (*subtle shadow*), efek terangkat sedikit (`translateY(-2px)`) saat hover.
 
+**Filter periode (lihat HANDOFF §14.1):** header Overview memuat dropdown
+**Periode** — `5 Tahun Terakhir` (default, `date_from=2022-01-01`),
+`2 Tahun Terakhir` (`2024-01-01`), dan `Semua Waktu` (tanpa filter). Dropdown
+dikirim sebagai `date_from`/`date_to` ke `/api/overview/kpi`,
+`/api/overview/sentiment-distribution`, dan `/api/overview/rating-distribution`.
+Filter hanya menyempitkan **visualisasi**; seluruh 2.832 ulasan tetap dipakai
+model. KPI menampilkan label skop (mis. "dari 2.832 total") saat periode < semua.
+
 **Charts** (via library charting JS, mis. Chart.js/Recharts/D3 sesuai pilihan stack React/vanilla):
 
 | Grafik | Bentuk | Endpoint | Field Response |

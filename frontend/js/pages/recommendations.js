@@ -12,6 +12,7 @@ const THEME_LABELS = {
   akses_lalulintas: 'Akses & Lalu Lintas',
   fasilitas: 'Fasilitas',
   harga: 'Harga',
+  tiket_masuk: 'Tiket / Biaya Masuk',
   makanan_kuliner: 'Makanan & Kuliner',
   pelayanan_staf: 'Pelayanan Staf',
   hewan_satwa: 'Hewan & Satwa',

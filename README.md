@@ -136,7 +136,7 @@ python backend_seed/verify_end_to_end.py
 
 ## Akses & Login
 
-Dashboard dilindungi autentikasi (token JWT). Detail desain & alur lengkap:
+Dashboard dilindungi autentikasi (token HMAC-SHA256 stateless). Detail desain & alur lengkap:
 HANDOFF.md §13.
 
 **Kredensial default (perangkat lunak, BUKAN untuk produksi):**

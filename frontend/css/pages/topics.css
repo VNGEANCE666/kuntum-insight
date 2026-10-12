@@ -43,3 +43,28 @@
 .topic-chart {
   width: 100%;
 }
+
+/* Catatan metodologi tema lintas sentimen */
+.info-note-card {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+}
+
+.info-note-card__text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--color-text);
+}
+
+.info-note-card__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--color-primary);
+  margin-top: 2px;
+}

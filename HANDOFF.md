@@ -324,3 +324,78 @@ Seluruh titik dicek via HTTP publik dengan hasil 200 dan identik dengan data lok
 3. Bila perlu cabut semua sesi lama sekaligus: `python scripts/set_auth.py rotate-secret`.
 4. Pastikan `backend_seed/auth.json` TETAP masuk `.gitignore` — jangan pernah commit.
 5. Rate-limit login: 5 percobaan gagal / 15 menit per user+IP (429).
+
+> **Kondisi saat ini di mesin pengembang:** `backend_seed/auth.json` (gitignored)
+> sudah berisi satu akun `admin_kuntum` / `kuntum_farmfield` (akun `admin`
+> default sudah dihapus) — kredensial tsb yang terpakai di produksi PythonAnywhere
+> dan di smoke test (lewati `VERIFY_USER`/`VERIFY_PASS`).
+
+## 14. Revisi Dosen — Catatan Hasil Bimbingan 9 Oktober 2026
+
+Branch kerja: **`feat/revisi-dosen-okt2026`** · Savepoint: git tag
+**`pre-revisi-dosen-2026-10-12`** pada `main` (HEAD `06767f6`), plus backup DB di
+`C:\Users\user\AppData\Local\Temp\opencode\kuntum_insight.db.pre-revisi.bak`.
+
+- **Buat savepoint sebagai rollback tercepat:** `git checkout -b rollback pre-revisi-dosen-2026-10-12`
+  (DB ikut kembali karena `data/kuntum_insight.db` ter-versioning git).
+- **Belum di-deploy** — semua perubahan revisi masih lokal di branch ini;
+  PythonAnywhere menunggu instruksi eksplisit.
+
+### 14.1 Poin 1 — Batasi visualisasi ke 5 tahun terakhir (data tetap utuh untuk training)
+
+- Endpoint `/api/overview/kpi`, `/api/overview/sentiment-distribution`, dan
+  `/api/overview/rating-distribution` menerima query parameter opsional
+  `date_from` / `date_to` (filter `review_date`, UTC). Tanpa parameter = perilaku
+  lama (semua data). Tidak ada filter untuk `/api/overview/sentiment-trend`
+  (grafik tren sudah dipecah ke granularity tahun/bulan via workaround artefak, §7).
+- Frontend Overview (`frontend/js/pages/overview.js`) menambah dropdown
+  **Periode**: `5 Tahun Terakhir` (default, `date_from=2022-01-01`), `2 Tahun
+  Terakhir` (`2024-01-01`), dan `Semua Waktu`. KPI memakai label skop
+  ("dari 2.832 total") dan cache key sadar-periode.
+- Definisi "5 tahun terakhir" = `date_from=2022-01-01`: dari pola data artefak
+  (§7), hanya 2022–2026 yang utuh per tahun kalender; tahun-tahun lama tersisa
+  hanya tanggal estimasi. **Model tetap dilatih & memprediksi seluruh 2.832
+  ulasan** — filter hanya membatasi visualisasi.
+- Verifikasi: `GET /api/overview/kpi?date_from=2022-01-01` → `total_reviews=1201`
+  (vs 2.832 tanpa filter). Smoke test `backend_seed/verify_end_to_end.py` otomatis
+  memeriksa batasan ini.
+
+### 14.2 Poin 2 — Klarifikasi peran Rating vs. Sentimen
+
+Hasil investigasi (sudah diverifikasi di DB):
+- Rating **bukan fitur model** — label sentimen cuma dipakai sebagai label awal
+  *weak supervision*. Prediksi murni dari teks (TF-IDF + Logistic Regression).
+- Korelasi rating–sentimen: Pearson **±0.697** (semua) / **0.670** (hanya baris
+  model); crosstab rating 1..5 → 63/36/163/682/1.888.
+- **384 baris (13,6%)** dilabeli langsung dari rating (`rating_fallback`) karena
+  tanpa teks; **114 ulasan rating 4–5 diprediksi negatif/netral** oleh model.
+
+Perubahan: `frontend/js/pages/pipeline.js` + `frontend/css/pages/pipeline.css`
+mendapat kartu **"Catatan Metodologi — Rating vs. Sentimen"** berisi 4 poin di atas.
+
+### 14.3 Poin 3a — Tema lintas sentimen (bukan bug, diberi penjelasan di UI)
+
+- Skor TF-IDF dihitung **terpisah per kelas sentimen**, jadi satu keyword/tema
+  sah muncul di beberapa kelas. Contoh: "hewan" bisa menjadi keluhan sekaligus
+  pujian meski dihitung pada korpus berbeda.
+- Perubahan: `frontend/js/pages/topics.js` + `frontend/css/pages/topics.css`
+  menampilkan kartu info "Satu tema dapat muncul di beberapa kelas sentimen…" di
+  atas tombol tab.
+
+### 14.4 Poin 3b — Inkonsistensi "Tiket" vs "Harga" (bug nyata, sudah diperbaiki)
+
+- `data/kuntum_insight.db`: keyword `tiket` semula terpetakan ke theme `harga`.
+  Di-update ke theme baru **`tiket_masuk`** (2 baris: negatif & netral):
+  `UPDATE topic_keywords SET theme='tiket_masuk' WHERE keyword='tiket'`.
+  Keyword `harga` & `mahal` tetap `harga`.
+- Frontend memetakan `tiket_masuk` → label **"Tiket / Biaya Masuk"**
+  (`KNOWN_THEMES` di `topics.js`, `THEME_LABELS` di `recommendations.js`).
+- Verifikasi: `GET /api/topics?sentiment_label=negatif` → baris keyword `tiket`
+  kini ber-theme `tiket_masuk`; dicek otomatis di smoke test.
+
+### 14.5 Perbaikan lintas sektor & catatan
+- `frontend/js/api.js`: impor `handleUnauthorized` dari `./auth.js` (bug laten —
+  halaman tidak ter-redirect ke login saat 401).
+- `backend_seed/verify_end_to_end.py`: kredensial login dibaca dari env
+  `VERIFY_USER`/`VERIFY_PASS` (fallback `admin/admin`), plus asersi baru untuk
+  poin 1 & 3b. Status lokal: **19/19 lulus**.
