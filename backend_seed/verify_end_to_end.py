@@ -85,7 +85,19 @@ with TestClient(main.app) as client:
     check("reviews semua (termasuk tanpa teks)", r.status_code == 200 and r.json()["meta"]["total"] == 2832)
 
     r = client.get("/api/recommendations", headers=headers)
-    check("recommendations", r.status_code == 200 and len(r.json()["data"]) > 0)
+    rec_body = r.json() if r.status_code == 200 else {}
+    rec_data = rec_body.get("data", [])
+    rec_meta = rec_body.get("meta", {})
+    rec_first = rec_data[0] if rec_data else {}
+    check("recommendations: data + meta",
+          r.status_code == 200 and len(rec_data) >= 6 and rec_meta.get("negative_total") == 132,
+          f"n={len(rec_data)} total={rec_meta.get('negative_total')}")
+    check("recommendations: kesimpulan + saran + topik + bukti",
+          bool(rec_first.get("insight")) and bool(rec_first.get("action"))
+          and bool(rec_first.get("priority")) and len(rec_first.get("keywords", [])) > 0
+          and len(rec_first.get("sample_reviews", [])) > 0,
+          f"theme={rec_first.get('theme')} kw={len(rec_first.get('keywords', []))}")
+    check("recommendations: ringkasan halaman", bool(rec_meta.get("summary")))
 
     r = client.get("/api/pipeline/status", headers=headers)
     check("pipeline/status", r.status_code == 200 and r.json()["data"]["model_version"] == "v1")

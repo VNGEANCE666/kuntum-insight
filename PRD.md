@@ -312,10 +312,12 @@ Base path: `/api`. Semua endpoint mengembalikan JSON. Pemetaan lengkap ke elemen
 | `/api/reviews/{review_id}` | GET | Detail satu ulasan | — | `reviews_clean` JOIN `sentiment_results` |
 | `/api/topics` | GET | Kata kunci & tema dominan per sentimen | `sentiment_label`, `top_n` | `topic_keywords` |
 | `/api/topics/{theme}/reviews` | GET | Ulasan representatif untuk satu tema | `sentiment_label` | `sentiment_results.top_keywords` + `reviews_clean` |
-| `/api/recommendations` | GET | Kartu rekomendasi actionable | — | `topic_keywords` (filter `sentiment_label = negatif`) + agregasi tren dari `review_date` |
+| `/api/recommendations` | GET | Kartu rekomendasi berbasis kesimpulan + bukti | `top_n` (default 8) | `topic_keywords` (negatif) + agregasi `reviews_clean` (`rating`, `review_text_original`) & `sentiment_results.sentiment_label` |
 | `/api/pipeline/status` | GET | Status pipeline untuk halaman admin/demo | — | Metadata: timestamp scraping terakhir, jumlah baris `reviews` vs `reviews_clean`, `model_version` aktif |
 
 **Konvensi response:** setiap endpoint list mengembalikan `{ "data": [...], "meta": { "total": N, "page": ..., "page_size": ... } }`; endpoint tunggal mengembalikan `{ "data": {...} }`. Error mengikuti format standar FastAPI (`{"detail": "..."}`) dengan HTTP status code yang sesuai.
+
+**Khusus `/api/recommendations`** (revisi bimbingan): setiap item berisi `theme`, `label`, `review_count`, `share_pct`, `avg_rating`, `low_rating_pct`, `priority`, `keywords` (`[{keyword, score}]`), `insight` (kesimpulan otomatis), `action` (saran perbaikan), dan `sample_reviews` (`text`, `rating`, `author`, `review_date`). `meta` berisi `negative_total`, `theme_total`, dan `summary`. `insight` dihitung secara **rule-based** dari data (bukan dikarang) dan wajib didampingi bukti topik + ulasan asli.
 
 ---
 

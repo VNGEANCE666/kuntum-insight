@@ -1,5 +1,7 @@
 /* ============================================================
-   Recommendations Page — Kartu rekomendasi actionable (DESIGN §5.D)
+   Recommendations Page — Kesimpulan + Saran + Bukti (DESIGN §5.D)
+   Setiap kartu: kesimpulan otomatis dari data, saran perbaikan,
+   lalu topik & cuplikan ulasan asli sebagai bukti.
    ============================================================ */
 import { apiGet } from '../api.js';
 import * as skel from '../components/skeleton.js';
@@ -24,19 +26,20 @@ export const recommendationsPage = {
     return `
       <div class="page-header">
         <h1>Rekomendasi Perbaikan</h1>
-        <p class="page-header__subtitle">Tema keluhan yang paling sering muncul dari ulasan negatif, diurutkan dari yang terbanyak.</p>
+        <p class="page-header__subtitle">Kesimpulan tiap tema keluhan, saran perbaikan, dan bukti ulasan pendukung.</p>
       </div>
+      <div id="rec-summary"></div>
       <div id="rec-list">${skel.cards(3)}</div>
     `;
   },
 
   async mount(root) {
-    let data = getCache('/api/recommendations');
-    if (!data) {
+    let payload = getCache('/api/recommendations');
+    if (!payload) {
       try {
-        const res = await apiGet('/api/recommendations', { top_n: 6 });
-        data = res.data || [];
-        setCache('/api/recommendations', data, 120000);
+        const res = await apiGet('/api/recommendations', { top_n: 8 });
+        payload = { items: res.data || [], meta: res.meta || {} };
+        setCache('/api/recommendations', payload, 120000);
       } catch (e) {
         const el = document.getElementById('rec-list');
         if (el) {
@@ -46,8 +49,13 @@ export const recommendationsPage = {
       }
     }
 
+    const items = payload.items || [];
+    const meta = payload.meta || {};
+    const summaryEl = document.getElementById('rec-summary');
     const el = document.getElementById('rec-list');
-    if (!data.length) {
+
+    if (!items.length) {
+      if (summaryEl) summaryEl.innerHTML = '';
       el.innerHTML = `
         <div class="empty-state">
           ${icon('lightbulb', 'empty-state__icon')}
@@ -57,40 +65,86 @@ export const recommendationsPage = {
       return;
     }
 
+    if (summaryEl && meta.summary) {
+      summaryEl.innerHTML = `
+        <div class="card rec-summary">
+          <div class="rec-summary__icon">${icon('lightbulb')}</div>
+          <div>
+            <div class="rec-summary__title">Ringkasan</div>
+            <p class="rec-summary__text">${escapeHtml(meta.summary)}</p>
+          </div>
+        </div>`;
+    }
+
     el.innerHTML = `
-      <div class="grid grid--3col">
-        ${data.map((rec, idx) => {
-          const label = THEME_LABELS[rec.theme] || capitalize(String(rec.theme).replace(/_/g, ' '));
-          return `
-            <article class="card rec-card" style="border-top:4px solid var(--color-coral);animation-delay:${idx * 40}ms">
-              <div class="rec-card__badge">Keluhan</div>
-              <h3 style="margin-bottom:6px">${escapeHtml(label)}</h3>
-              <div class="rec-card__meta">
-                <span class="rec-card__count">${rec.review_count} ulasan terkait</span>
-                <span class="rec-card__trend">${rec.trend ? escapeHtml(rec.trend) : ''}</span>
-              </div>
-              <div class="rec-card__samples">
-                ${(rec.sample_reviews || []).slice(0, 2).map((s) => `
-                  <div class="review-quote" style="border-left-color:var(--color-coral)">
-                    <p>${escapeHtml(s.text || '(Tidak ada teks)')}</p>
-                    ${s.review_date ? `<div class="review-quote__date">${formatDate(s.review_date)}</div>` : ''}
-                  </div>`).join('') || '<p class="rec-card__nosample">Tidak ada cuplikan teks.</p>'}
-              </div>
-              <div class="rec-card__action">
-                <button class="btn btn--ghost btn--sm rec-drill-btn" data-theme="${escapeHtml(rec.theme)}" data-count="${rec.review_count}">
-                  Lihat semua ${rec.review_count} ulasan ${icon('chevronRight', 'ki-ico--inline')}
-                </button>
-              </div>
-            </article>`;
-        }).join('')}
+      <div class="grid grid--2col">
+        ${items.map((rec, idx) => this._renderCard(rec, meta, idx)).join('')}
       </div>
-      <div class="card" style="margin-top:16px;background:var(--color-coral-soft);border-color:var(--color-coral)">
-        <p style="font-size:var(--font-size-small);color:#7B1FA2;display:flex;align-items:flex-start;gap:8px">${icon('lightbulb', 'ki-ico--inline')} <span><strong>Catatan:</strong> Rekomendasi disusun dari agregasi tema ulasan negatif. Setiap kartu menunjukkan jumlah ulasan & contoh bukti untuk bahan tindak lanjut manajemen.</span></p>
+      <div class="card rec-note">
+        ${icon('info', 'rec-note__icon')}
+        <span><strong>Catatan:</strong> Kesimpulan disusun otomatis dari agregasi data (jumlah ulasan, rating, dan kata kunci dominan) — bukan karangan. Topik dan cuplikan ulasan asli disertakan sebagai bukti; klik "Lihat semua" untuk menelusuri seluruh ulasan tema terkait.</span>
       </div>`;
 
     el.querySelectorAll('.rec-drill-btn').forEach((btn) => {
       btn.addEventListener('click', () => this._openThemePanel(btn.dataset.theme, parseInt(btn.dataset.count, 10) || 0));
     });
+  },
+
+  _renderCard(rec, meta, idx) {
+    const label = rec.label || THEME_LABELS[rec.theme] || capitalize(String(rec.theme).replace(/_/g, ' '));
+    const priority = rec.priority || '';
+    const priorityClass = priority ? `rec-priority--${priority.toLowerCase()}` : '';
+    const totalNegative = meta.negative_total;
+    const share = rec.share_pct != null ? rec.share_pct : null;
+
+    const keywords = (rec.keywords || []).map((k) => `<span class="rec-keyword">${escapeHtml(k.keyword)}</span>`).join('');
+    const samples = (rec.sample_reviews || []).map((s) => `
+      <div class="review-quote" style="border-left-color:var(--color-coral)">
+        <p>${escapeHtml(s.text || '(Tidak ada teks)')}</p>
+        <div class="review-quote__meta">
+          <span>${s.rating != null ? Math.round(s.rating) + '/5' : ''}${s.author ? ` · ${escapeHtml(s.author)}` : ''}</span>
+          ${s.review_date ? `<span class="review-quote__date">${formatDate(s.review_date)}</span>` : ''}
+        </div>
+      </div>`).join('');
+
+    return `
+      <article class="card rec-card" style="border-top:4px solid var(--color-coral);animation-delay:${idx * 40}ms">
+        <div class="rec-card__head">
+          <span class="rec-card__badge">Keluhan</span>
+          ${priority ? `<span class="rec-priority ${priorityClass}">Prioritas ${escapeHtml(priority)}</span>` : ''}
+        </div>
+        <h3 class="rec-card__title">${escapeHtml(label)}</h3>
+        <div class="rec-card__meta">
+          <span class="rec-card__count">${rec.review_count} ulasan terkait</span>
+          ${share != null && totalNegative ? `<span class="rec-card__share">${share}% dari ${totalNegative} keluhan</span>` : ''}
+        </div>
+
+        <div class="rec-insight">
+          <div class="rec-block__label">${icon('info', 'rec-block__icon')} Kesimpulan</div>
+          <p class="rec-block__text">${escapeHtml(rec.insight || '—')}</p>
+        </div>
+
+        <div class="rec-action">
+          <div class="rec-block__label">${icon('lightbulb', 'rec-block__icon')} Saran Perbaikan</div>
+          <p class="rec-block__text">${escapeHtml(rec.action || '—')}</p>
+        </div>
+
+        <div class="rec-evidence">
+          <div class="rec-block__label">Bukti — topik terkait</div>
+          <div class="rec-keywords">${keywords || '<span class="rec-card__nosample">—</span>'}</div>
+
+          <div class="rec-block__label">Bukti — cuplikan ulasan</div>
+          <div class="rec-card__samples">
+            ${samples || '<p class="rec-card__nosample">Tidak ada cuplikan teks.</p>'}
+          </div>
+        </div>
+
+        <div class="rec-card__action">
+          <button class="btn btn--ghost btn--sm rec-drill-btn" data-theme="${escapeHtml(rec.theme)}" data-count="${rec.review_count}">
+            Lihat semua ${rec.review_count} ulasan ${icon('chevronRight', 'ki-ico--inline')}
+          </button>
+        </div>
+      </article>`;
   },
 
   async _openThemePanel(theme, totalCount) {

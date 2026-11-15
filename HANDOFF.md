@@ -332,9 +332,12 @@ Seluruh titik dicek via HTTP publik dengan hasil 200 dan identik dengan data lok
 
 ## 14. Revisi Dosen — Catatan Hasil Bimbingan 9 Oktober 2026
 
-Branch kerja: **`feat/revisi-dosen-okt2026`** · Savepoint: git tag
+Branch kerja: **`feat/revisi-dosen-okt2026`**. Savepoint lama: git tag
 **`pre-revisi-dosen-2026-10-12`** pada `main` (HEAD `06767f6`), plus backup DB di
 `C:\Users\user\AppData\Local\Temp\opencode\kuntum_insight.db.pre-revisi.bak`.
+Savepoint setelah revisi ini: commit **`9449d2f`**, git tag
+**`revisi-dosen-2026-10-12`** (dipakai sebagai titik rollback fitur rekomendasi
+insight berikutnya).
 
 - **Buat savepoint sebagai rollback tercepat:** `git checkout -b rollback pre-revisi-dosen-2026-10-12`
   (DB ikut kembali karena `data/kuntum_insight.db` ter-versioning git).
@@ -399,3 +402,55 @@ mendapat kartu **"Catatan Metodologi — Rating vs. Sentimen"** berisi 4 poin di
 - `backend_seed/verify_end_to_end.py`: kredensial login dibaca dari env
   `VERIFY_USER`/`VERIFY_PASS` (fallback `admin/admin`), plus asersi baru untuk
   poin 1 & 3b. Status lokal: **19/19 lulus**.
+
+---
+
+## 15. Revisi Bimbingan — Halaman Rekomendasi Berbasis Kesimpulan (Oktober 2026)
+
+**Masalah yang disampaikan dosen:** halaman *Rekomendasi Perbaikan* hanya menampilkan
+daftar tema keluhan beserta kutipan ulasan, tanpa hasil analisis. Dosen meminta
+adanya **kesimpulan/insight** yang diturunkan dari topik & ulasan negatif, dengan
+topik dan ulasan terkait tetap ditampilkan sebagai **bukti** bahwa kesimpulan
+sesuai data (bukan karangan).
+
+**Solusi:** `/api/recommendations` diperluas; tiap item kini berisi `label`,
+`review_count`, `share_pct`, `avg_rating`, `low_rating_pct`, `priority`,
+`keywords[{keyword,score}]`, `insight`, `action`, dan `sample_reviews`
+(`text`,`rating`,`author`,`review_date`). `meta` berisi `negative_total`,
+`theme_total`, dan `summary`. `insight` & `action` disusun **rule-based** dari
+agregasi data (bukan LLM), `priority`: ≥25 → Tinggi, ≥15 → Sedang, sisanya Rendah.
+`top_n` default 8.
+
+Contoh output aktual (tema Harga, 34 ulasan, prioritas Tinggi):
+
+> Dari 34 ulasan negatif yang membahas Harga (25,8% dari 132 keluhan), 73,5% memberi
+> rating 1–2 dengan rata-rata 2,1/5. Kata kunci dominan: "mahal" dan "harga". Artinya,
+> keluhan berpusat pada persepsi harga yang dianggap kurang sepadan dengan pengalaman
+> yang didapat.
+>
+> **Saran:** Evaluasi kewajaran harga dan komunikasikan nilai (fasilitas/pengalaman)
+> yang didapat pengunjung.
+
+**Perubahan file:**
+- `backend_seed/main.py` — `get_recommendations` ditulis ulang; konstanta
+  `THEME_LABELS`, `THEME_INTERPRETATION`, `THEME_ACTION`; helper `_format_id_float`,
+  `_priority_for`, `_parse_tokens`, `pick_samples`.
+- `frontend/js/pages/recommendations.js` — ringkasan halaman + kartu berurutan
+  **Kesimpulan → Saran Perbaikan → Bukti topik → Bukti ulasan** + badge prioritas +
+  drill-down; memanggil `top_n: 8`.
+- `frontend/css/pages/recommendations.css` — gaya ringkasan, badge prioritas, kotak
+  kesimpulan/saran, chip topik, dan catatan metodologi.
+- `backend_seed/verify_end_to_end.py` — asersi `meta.negative_total==132`, isi
+  `insight`/`action`/`priority`, `keywords>0`, `sample_reviews>0`, `meta.summary`.
+- `DESIGN.md` §5.D, `PRD.md` §10 — anatomi kartu & kontrak respons baru.
+
+**Verifikasi:** smoke test **21/21 lulus**; uji browser Playwright **13/13 lulus**
+(ringkasan, 8 kartu, urutan Harga di atas, semua blok kesimpulan/saran/bukti,
+drill-down ulasan terbuka, tanpa error JS). Server uji: `uvicorn` port 8000.
+
+**Catatan rollback:** versi sebelum fitur ini ada di tag **`revisi-dosen-2026-10-12`**
+(commit `9449d2f`). Untuk membatalkan: `git checkout -b rollback-kesimpulan revisi-dosen-2026-10-12`
+atau `git checkout -- frontend/js/pages/recommendations.js` dsb. Setelah disetujui,
+buat commit + tag savepoint baru.
+
+**Belum di-deploy** — PythonAnywhere (produksi instansi) tidak disentuh.

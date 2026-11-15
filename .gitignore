@@ -20,3 +20,12 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# Runtime logs & backup lokal (jangan di-commit)
+_server_*.log
+backend_seed/server*.log
+verify_result.txt
+*.bak_*
+*.db-journal
+*.db-wal
+*.db-shm

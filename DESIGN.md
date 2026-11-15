@@ -136,11 +136,18 @@ model. KPI menampilkan label skop (mis. "dari 2.832 total") saat periode < semua
 
 ### D. Recommendations Page — rute `/recommendations`
 
-- Kartu rekomendasi (visual serupa KPI card tapi dengan aksen warna Coral/Negatif) dari `/api/recommendations`, masing-masing berisi field:
-  - `theme` — nama tema (mis. "Kebersihan Toilet").
-  - `review_count` & `trend` — jumlah ulasan terkait & arah tren (naik/turun) dibanding periode sebelumnya.
-  - `sample_reviews` — 1–2 cuplikan `review_text_original` sebagai bukti kualitatif.
-- Urutan kartu berdasarkan `review_count` menurun (tema paling banyak dikeluhkan tampil paling atas), kecuali API sudah mengurutkan (`/api/recommendations` bertanggung jawab atas urutan; frontend tinggal render sesuai urutan response).
+Halaman diawali **ringkasan** dari `meta.summary`: total ulasan negatif dan tema yang paling sering disebut.
+
+Tiap kartu rekomendasi (aksen Coral/Negatif) disusun dengan urutan **Kesimpulan → Saran Perbaikan → Bukti**:
+
+- `theme` + `label` — nama tema ramah pengguna (mis. "Harga", "Tiket / Biaya Masuk").
+- `review_count`, `share_pct` (persentase dari `meta.negative_total`), `avg_rating`, `low_rating_pct`, `priority` (Tinggi/Sedang/Rendah).
+- `insight` — kalimat **kesimpulan otomatis** yang dirangkum dari data: jumlah ulasan, porsi terhadap seluruh keluhan, kecenderungan rating, kata kunci dominan, dan interpretasinya.
+- `action` — usulan **tindakan perbaikan** untuk tema tsb.
+- `keywords` — daftar `{keyword, score}` (top-3) sebagai **bukti topik**.
+- `sample_reviews` — hingga 3 cuplikan `review_text_original` beserta `rating`, `author`, `review_date` sebagai **bukti kualitatif**.
+
+Kesimpulan bersifat **rule-based** (dihitung dari data, bukan karangan), dan ulasan asli **wajib ditampilkan** agar kesimpulan dapat diverifikasi pembaca. Urutan kartu berdasarkan `review_count` menurun (API yang mengurutkan; frontend render sesuai urutan response).
 
 ### E. Data Pipeline Status — rute `/pipeline`
 
