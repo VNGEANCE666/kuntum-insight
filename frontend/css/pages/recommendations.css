@@ -227,6 +227,38 @@
   color: var(--color-text);
 }
 
+.rec-keyword__count {
+  margin-left: 5px;
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.rec-block__label--row {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rec-evidence-badge {
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.rec-evidence-badge--kuat { background: var(--color-primary-soft); color: #2E7D32; }
+.rec-evidence-badge--sedang { background: #FFF4D6; color: #8A6100; }
+.rec-evidence-badge--terbatas { background: var(--color-coral-soft); color: #C62828; }
+
+.rec-match {
+  margin-top: 5px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
 /* ---------- Catatan metodologi ---------- */
 .rec-note {
   display: flex;

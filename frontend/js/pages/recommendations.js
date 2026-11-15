@@ -82,7 +82,7 @@ export const recommendationsPage = {
       </div>
       <div class="card rec-note">
         ${icon('info', 'rec-note__icon')}
-        <span><strong>Catatan:</strong> Kesimpulan disusun otomatis dari agregasi data (jumlah ulasan, rating, dan kata kunci dominan) — bukan karangan. Topik dan cuplikan ulasan asli disertakan sebagai bukti; klik "Lihat semua" untuk menelusuri seluruh ulasan tema terkait.</span>
+        <span><strong>Catatan metode:</strong> ${escapeHtml(meta.methodology || 'Jumlah ulasan dan bukti dihitung dari himpunan ulasan yang sama.')} Kesimpulan disusun otomatis dari data (bukan karangan); klik "Lihat semua" untuk menelusuri seluruh ulasan negatif tema terkait.</span>
       </div>`;
 
     el.querySelectorAll('.rec-drill-btn').forEach((btn) => {
@@ -97,15 +97,27 @@ export const recommendationsPage = {
     const totalNegative = meta.negative_total;
     const share = rec.share_pct != null ? rec.share_pct : null;
 
-    const keywords = (rec.keywords || []).map((k) => `<span class="rec-keyword">${escapeHtml(k.keyword)}</span>`).join('');
-    const samples = (rec.sample_reviews || []).map((s) => `
+    const strength = rec.evidence_strength || '';
+    const strengthLabel = { kuat: 'Bukti kuat', sedang: 'Bukti sedang', terbatas: 'Bukti terbatas' }[strength] || '';
+    const strengthClass = strength ? `rec-evidence-badge--${strength}` : '';
+
+    const keywords = (rec.keywords || []).map((k) => {
+      const count = k.count != null ? `<span class="rec-keyword__count">${k.count}</span>` : '';
+      return `<span class="rec-keyword" title="${k.count != null ? `${k.count} ulasan menyebut istilah ini` : ''}">${escapeHtml(k.keyword)}${count}</span>`;
+    }).join('');
+
+    const samples = (rec.sample_reviews || []).map((s) => {
+      const matched = (s.matched_terms || []).map((t) => escapeHtml(t)).join(', ');
+      return `
       <div class="review-quote" style="border-left-color:var(--color-coral)">
         <p>${escapeHtml(s.text || '(Tidak ada teks)')}</p>
         <div class="review-quote__meta">
           <span>${s.rating != null ? Math.round(s.rating) + '/5' : ''}${s.author ? ` · ${escapeHtml(s.author)}` : ''}</span>
           ${s.review_date ? `<span class="review-quote__date">${formatDate(s.review_date)}</span>` : ''}
         </div>
-      </div>`).join('');
+        ${matched ? `<div class="rec-match">Cocok: ${matched}</div>` : ''}
+      </div>`;
+    }).join('');
 
     return `
       <article class="card rec-card" style="border-top:4px solid var(--color-coral);animation-delay:${idx * 40}ms">
@@ -115,8 +127,8 @@ export const recommendationsPage = {
         </div>
         <h3 class="rec-card__title">${escapeHtml(label)}</h3>
         <div class="rec-card__meta">
-          <span class="rec-card__count">${rec.review_count} ulasan terkait</span>
-          ${share != null && totalNegative ? `<span class="rec-card__share">${share}% dari ${totalNegative} keluhan</span>` : ''}
+          <span class="rec-card__count">${rec.review_count} ulasan menyebut tema ini</span>
+          ${share != null && totalNegative ? `<span class="rec-card__share">${share}% dari ${totalNegative} ulasan negatif</span>` : ''}
         </div>
 
         <div class="rec-insight">
@@ -133,7 +145,10 @@ export const recommendationsPage = {
           <div class="rec-block__label">Bukti — topik terkait</div>
           <div class="rec-keywords">${keywords || '<span class="rec-card__nosample">—</span>'}</div>
 
-          <div class="rec-block__label">Bukti — cuplikan ulasan</div>
+          <div class="rec-block__label rec-block__label--row">
+            <span>Bukti — cuplikan ulasan</span>
+            ${strengthLabel ? `<span class="rec-evidence-badge ${strengthClass}">${strengthLabel}</span>` : ''}
+          </div>
           <div class="rec-card__samples">
             ${samples || '<p class="rec-card__nosample">Tidak ada cuplikan teks.</p>'}
           </div>

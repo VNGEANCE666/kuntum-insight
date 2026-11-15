@@ -98,6 +98,33 @@ with TestClient(main.app) as client:
           and len(rec_first.get("sample_reviews", [])) > 0,
           f"theme={rec_first.get('theme')} kw={len(rec_first.get('keywords', []))}")
     check("recommendations: ringkasan halaman", bool(rec_meta.get("summary")))
+    check("recommendations: catatan metodologi", bool(rec_meta.get("methodology")))
+
+    strength_ok = True
+    keywords_ok = True
+    samples_ok = True
+    for item in rec_data:
+        if item.get("evidence_strength") not in ("kuat", "sedang", "terbatas"):
+            strength_ok = False
+        for kw in item.get("keywords", []):
+            if not isinstance(kw.get("count"), int) or kw.get("count", 0) <= 0:
+                keywords_ok = False
+        for sample in item.get("sample_reviews", []):
+            terms = sample.get("matched_terms") or []
+            text_lower = (sample.get("text") or "").lower()
+            if not terms or not any(str(term).lower() in text_lower for term in terms):
+                samples_ok = False
+    check("recommendations: evidence_strength valid", strength_ok)
+    check("recommendations: keywords punya count", keywords_ok)
+    check("recommendations: tiap bukti punya matched_terms yang cocok", samples_ok)
+
+    makanan = next((x for x in rec_data if x.get("theme") == "makanan_kuliner"), None)
+    makanan_texts = [s.get("text", "").lower() for s in (makanan or {}).get("sample_reviews", [])]
+    banned = ("pancing", "kasih makan hewan", "memberi makan hewan", "makan hewan")
+    check("recommendations: bukti makanan bebas konteks non-kuliner",
+          makanan is not None and bool(makanan_texts)
+          and not any(phrase in text for text in makanan_texts for phrase in banned),
+          f"samples={len(makanan_texts)}")
 
     r = client.get("/api/pipeline/status", headers=headers)
     check("pipeline/status", r.status_code == 200 and r.json()["data"]["model_version"] == "v1")

@@ -23,6 +23,7 @@ import hmac
 import json
 import math
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -605,6 +606,140 @@ THEME_ACTION = {
     "akses_lalulintas": "Perbaiki petunjuk arah, manajemen parkir, dan akses transportasi menuju lokasi.",
 }
 
+# ---------------------------------------------------------------------------
+# Lapisan relevansi tema (Revisi 3).
+#
+# Tujuan: memastikan angka "N ulasan terkait" dan bukti ulasan berasal dari
+# himpunan yang SAMA, sehingga tidak mungkin muncul ulasan yang tidak relevan.
+# `topic_keywords` dari model terlalu umum untuk sebagian tema (mis. hanya
+# "makan", "tempat", "kurang"), sehingga dicocokkan ulang memakai istilah inti
+# tema + frasa pengecualian di bawah ini.
+# ---------------------------------------------------------------------------
+THEME_RELEVANCE = {
+    "harga": {
+        "include": [
+            r"harga", r"mahal", r"kemahalan", r"overprice", r"over price",
+            r"worth it", r"biaya", r"tarif", r"80\s?rb", r"80\s?ribu",
+            r"70\s?rb", r"70\s?ribu",
+        ],
+        "exclude": [],
+    },
+    "tiket_masuk": {
+        "include": [
+            r"tiket", r"biaya masuk", r"harga masuk", r"tiket masuk", r"htp",
+            r"biaya tiket", r"harga tiket",
+        ],
+        "exclude": [r"tiket parkir", r"karcis parkir"],
+    },
+    "makanan_kuliner": {
+        "include": [
+            r"kuliner", r"resto", r"restoran", r"warung", r"kafe", r"cafe",
+            r"menu", r"makanan", r"minuman", r"snack", r"jajanan", r"porsi",
+            r"rasa", r"nasi", r"kantin", r"tempat makan", r"makan siang",
+            r"sarapan",
+        ],
+        "exclude": [
+            r"makan\s+hewan", r"kasih\s+makan",
+            r"makan(?:an)?\s+(?:sapi|hewan|kelinci|ikan|ternak|ayam|kambing)",
+            r"pakan", r"memancing", r"pancing", r"makan\s+rumput",
+        ],
+    },
+    "fasilitas": {
+        "include": [
+            r"fasilitas", r"toilet", r"wc", r"musholla", r"mushola",
+            r"gazebo", r"kursi", r"bangunan", r"tempat sampah",
+            r"kolam", r"wahana", r"sarana",
+        ],
+        "exclude": [],
+    },
+    "hewan_satwa": {
+        "include": [
+            r"hewan", r"satwa", r"kelinci", r"marmut", r"hamster", r"kandang",
+            r"sapi", r"kambing", r"ayam", r"bebek", r"ikan", r"kuda", r"kura",
+            r"burung", r"rusa",
+        ],
+        "exclude": [],
+    },
+    "pelayanan_staf": {
+        "include": [
+            r"petugas", r"staf", r"karyawan", r"pelayan", r"pegawai",
+            r"resepsionis", r"satpam", r"teller", r"pelayanan", r"komunikatif",
+            r"jutek", r"kasar", r"ramah", r"dilayani", r"melayani",
+        ],
+        "exclude": [],
+    },
+    "anak_keluarga": {
+        "include": [
+            r"anak", r"keluarga", r"balita", r"stroller", r"edukasi",
+            r"wisata keluarga", r"ramah anak", r"anak kecil",
+        ],
+        "exclude": [],
+    },
+    "akses_lalulintas": {
+        "include": [
+            r"macet", r"kemacetan", r"akses", r"jalan", r"gerbang",
+            r"lalu lintas", r"transportasi", r"angkutan", r"ojek", r"bus",
+            r"kendaraan", r"parkir", r"pak ogah",
+        ],
+        "exclude": [r"jalan[- ]jalan", r"jalan santai"],
+    },
+}
+
+# Sinyal keluhan — dipakai untuk memeringkat bukti, bukan untuk menghitung jumlah.
+NEGATIVE_CUES = re.compile(
+    r"\b(tidak|tak|kurang|gak|ga|nggak|enggak|belum|sayang|mahal|kemahalan|"
+    r"kotor|kurus|kering|jelek|sempit|sedikit|banyak|kecewa|buruk|parah|rusak|"
+    r"bau|panas|telat|lama|antre|antri|tutup|bohong|kasar|jutek|overprice|"
+    r"sepi|terbengkalai|mengecewakan|mengcewakan)\b",
+    re.IGNORECASE,
+)
+
+METHODOLOGY_NOTE = (
+    "Jumlah ulasan per tema dihitung dari ulasan negatif yang memuat istilah inti tema "
+    "dan tidak memuat frasa ambigu (mis. 'kasih makan hewan' untuk Makanan & Kuliner). "
+    "Satu ulasan dapat menyebut lebih dari satu tema, sehingga jumlah antar-tema tidak "
+    "dijumlahkan menjadi 132. Bukti ulasan diambil dari himpunan yang sama dengan angka tersebut."
+)
+
+
+def _compile_theme_relevance() -> dict:
+    compiled = {}
+    for theme, spec in THEME_RELEVANCE.items():
+        include = re.compile(
+            "|".join(f"(?<![A-Za-z])(?:{p})(?![A-Za-z])" for p in spec["include"]),
+            re.IGNORECASE,
+        )
+        exclude = (
+            re.compile(
+                "|".join(f"(?<![A-Za-z])(?:{p})(?![A-Za-z])" for p in spec["exclude"]),
+                re.IGNORECASE,
+            )
+            if spec.get("exclude")
+            else None
+        )
+        compiled[theme] = (include, exclude)
+    return compiled
+
+
+THEME_RELEVANCE_COMPILED = _compile_theme_relevance()
+
+
+def _match_theme(text: str, theme: str) -> list[str]:
+    """Kembalikan istilah tema yang cocok pada teks (kosong = tidak relevan)."""
+    if not text:
+        return []
+    include, exclude = THEME_RELEVANCE_COMPILED.get(theme, (None, None))
+    if include is None:
+        return []
+    if exclude and exclude.search(text):
+        return []
+    terms = []
+    for match in include.finditer(text):
+        term = match.group(0).lower()
+        if term not in terms:
+            terms.append(term)
+    return terms
+
 
 def _format_id_float(value: float, digits: int = 1) -> str:
     """Format angka desimal gaya Indonesia (koma sebagai pemisah)."""
@@ -612,28 +747,52 @@ def _format_id_float(value: float, digits: int = 1) -> str:
 
 
 def _priority_for(count: int) -> str:
-    if count >= 25:
+    """Prioritas berbasis jumlah ulasan tervalidasi (ambang didokumentasikan di HANDOFF §15)."""
+    if count >= 20:
         return "Tinggi"
     if count >= 15:
         return "Sedang"
     return "Rendah"
 
 
-def _parse_tokens(tokens_json) -> set:
-    try:
-        return set(json.loads(tokens_json)) if tokens_json else set()
-    except (TypeError, json.JSONDecodeError):
-        return set()
+def _evidence_strength(count: int) -> str:
+    if count >= 20:
+        return "kuat"
+    if count >= 15:
+        return "sedang"
+    return "terbatas"
 
 
 @app.get("/api/recommendations", dependencies=[Depends(require_auth)])
 def get_recommendations(top_n: int = 8):
+    """Kartu rekomendasi: angka dan bukti dihitung dari himpunan ulasan yang sama."""
+    from collections import Counter
+
     topic_df = state["topic_keywords"]
     merged = state["merged"]
 
     negative = merged[merged["sentiment_label"] == "negatif"].copy()
     total_negative = int(len(negative))
-    token_sets = negative["review_tokens"].apply(_parse_tokens)
+
+    prepared = []
+    for _, row in negative.iterrows():
+        raw = row["review_text_original"]
+        text = (str(raw) if pd.notna(raw) else "").strip()
+        if text:
+            prepared.append((row, text))
+
+    # Hitung kecocokan semua tema per ulasan sekali, untuk mengukur "fokus":
+    # ulasan yang menyebut banyak tema berbeda tidak diprioritaskan sebagai bukti
+    # untuk satu tema tertentu.
+    per_review = {}
+    for row, text in prepared:
+        lower = text.lower()
+        hits = {}
+        for theme_name in THEME_RELEVANCE:
+            terms = _match_theme(lower, theme_name)
+            if terms:
+                hits[theme_name] = terms
+        per_review[row["review_id"]] = hits
 
     negatif_themes = (
         topic_df[(topic_df["sentiment_label"] == "negatif") & (topic_df["theme"].notna())]
@@ -641,51 +800,90 @@ def get_recommendations(top_n: int = 8):
         .sort_values(ascending=False)
     )
 
-    def pick_samples(df: pd.DataFrame, top_keyword, limit: int = 3) -> list[dict]:
-        """Pilih contoh ulasan paling informatif (utamakan kata kunci terkuat & teks terpanjang)."""
+    def pick_samples(matched_rows: list, limit: int = 3) -> list[dict]:
+        """Pilih bukti dari himpunan tervalidasi: istilah tema + sinyal keluhan.
+
+        Bila tersedia cukup kandidat rating <= 3, sampel positif (rating 4-5)
+        tidak ditampilkan agar bukti konsisten dengan label negatif.
+        """
         candidates, seen = [], set()
-        for _, row in df.iterrows():
-            raw_text = row["review_text_original"]
-            text = (str(raw_text) if pd.notna(raw_text) else "").strip()
-            if not text or text in seen:
+        for row, text, terms, total_terms in matched_rows:
+            key = re.sub(r"\s+", " ", text.lower())[:100]
+            if key in seen:
                 continue
-            seen.add(text)
-            toks = _parse_tokens(row["review_tokens"])
-            has_top = 1 if top_keyword and top_keyword in toks else 0
-            candidates.append((
-                has_top,
-                len(text),
-                {
-                    "text": text,
-                    "review_date": str(row["review_date"]),
-                    "rating": int(row["rating"]) if pd.notna(row["rating"]) else None,
-                    "author": str(row["author"]) if pd.notna(row["author"]) else None,
-                },
-            ))
-        candidates.sort(key=lambda c: (c[0], c[1]), reverse=True)
-        return [c[2] for c in candidates[:limit]]
+            seen.add(key)
+            rating = int(row["rating"]) if pd.notna(row["rating"]) else None
+            has_cue = 1.0 if NEGATIVE_CUES.search(text) else 0.0
+            is_low = rating is not None and rating <= 3
+            length_pref = min(len(text), 400) / 400.0
+            word_count = max(len(text.split()), 1)
+            density_bonus = min(1.5, (len(terms) / word_count) * 15.0)
+            focus = len(terms) / total_terms if total_terms else 0.0
+            score = (
+                2.0 * min(len(terms), 4)
+                + 1.5 * has_cue
+                + (1.0 if is_low else 0.0)
+                + length_pref
+                + density_bonus
+                + 3.0 * focus
+            )
+            candidates.append({
+                "score": score,
+                "rating": rating,
+                "is_low": is_low,
+                "has_cue": has_cue > 0,
+                "row": row,
+                "text": text,
+                "terms": terms,
+            })
+
+        low = [c for c in candidates if c["is_low"]]
+        pool = low if len(low) >= limit else candidates
+        with_cue = [c for c in pool if c["has_cue"]]
+        if len(with_cue) >= limit:
+            pool = with_cue
+        pool.sort(key=lambda c: (-c["score"], c["rating"] if c["rating"] is not None else 9))
+
+        samples = []
+        for cand in pool[:limit]:
+            row = cand["row"]
+            date_val = row["review_date"]
+            samples.append({
+                "text": cand["text"],
+                "review_date": str(date_val) if pd.notna(date_val) else None,
+                "rating": int(row["rating"]) if pd.notna(row["rating"]) else None,
+                "author": str(row["author"]) if pd.notna(row["author"]) else None,
+                "matched_terms": cand["terms"],
+            })
+        return samples
 
     recommendations = []
     for theme in negatif_themes.index:
-        keywords_df = topic_df[
-            (topic_df["theme"] == theme) & (topic_df["sentiment_label"] == "negatif")
-        ].sort_values("score", ascending=False)
-        keyword_list = keywords_df["keyword"].tolist()
-        if not keyword_list:
+        if theme not in THEME_RELEVANCE:
             continue
 
-        mask = token_sets.apply(lambda toks, kws=keyword_list: any(k in toks for k in kws))
-        theme_reviews = negative[mask]
-        count = int(len(theme_reviews))
+        matched_rows = []
+        for row, text in prepared:
+            hits = per_review[row["review_id"]]
+            terms = hits.get(theme)
+            if terms:
+                matched_rows.append((row, text, terms, sum(len(v) for v in hits.values())))
+        count = len(matched_rows)
         if count == 0:
             continue
 
+        term_freq = Counter()
+        for _, _, terms, _ in matched_rows:
+            for term in set(terms):
+                term_freq[term] += 1
         top_keywords = [
-            {"keyword": row["keyword"], "score": round(float(row["score"]), 2)}
-            for _, row in keywords_df.head(3).iterrows()
+            {"keyword": term, "count": freq}
+            for term, freq in term_freq.most_common(3)
         ]
 
-        ratings = pd.to_numeric(theme_reviews["rating"], errors="coerce").dropna()
+        ratings = pd.to_numeric(
+            pd.Series([row["rating"] for row, _, _, _ in matched_rows]), errors="coerce"
+        ).dropna()
         avg_rating = float(ratings.mean()) if len(ratings) else None
         low_rating_pct = float((ratings <= 2).mean() * 100) if len(ratings) else None
 
@@ -710,18 +908,20 @@ def get_recommendations(top_n: int = 8):
         share_pct = (count / total_negative * 100) if total_negative else 0.0
         if avg_rating is not None:
             rating_text = (
-                f"{_format_id_float(low_rating_pct)}% memberi rating 1–2 dengan rata-rata "
-                f"{_format_id_float(avg_rating)}/5"
+                f"{_format_id_float(low_rating_pct)}% di antaranya memberi rating 1–2 "
+                f"(rata-rata {_format_id_float(avg_rating)}/5)"
             )
         else:
             rating_text = "data rating tidak tersedia"
 
         insight = (
-            f"Dari {count} ulasan negatif yang membahas {label} "
-            f"({_format_id_float(share_pct)}% dari {total_negative} keluhan), {rating_text}. "
-            f"Kata kunci dominan: {kw_text}. Artinya, {interpretation}."
+            f"Dari {total_negative} ulasan negatif, {count} di antaranya menyebut {label} "
+            f"({_format_id_float(share_pct)}%). {rating_text}. "
+            f"Istilah yang paling sering muncul: {kw_text}. Artinya, {interpretation}."
         )
 
+        strength = _evidence_strength(count)
+        sample_limit = 3 if strength != "terbatas" else 2
         recommendations.append({
             "theme": theme,
             "label": label,
@@ -733,7 +933,8 @@ def get_recommendations(top_n: int = 8):
             "insight": insight,
             "action": action,
             "priority": _priority_for(count),
-            "sample_reviews": pick_samples(theme_reviews, kw_names[0] if kw_names else None),
+            "evidence_strength": strength,
+            "sample_reviews": pick_samples(matched_rows, sample_limit),
         })
 
     recommendations.sort(key=lambda r: r["review_count"], reverse=True)
@@ -745,8 +946,8 @@ def get_recommendations(top_n: int = 8):
         )
         summary = (
             f"Terdapat {total_negative} ulasan negatif. Tema yang paling sering disebut: "
-            f"{top3_text}. Kesimpulan tiap tema disusun dari jumlah ulasan, rating, dan kata "
-            f"kunci dominan; ulasan asli disertakan sebagai bukti."
+            f"{top3_text}. Kesimpulan tiap tema dihitung dari ulasan yang menyebut istilah "
+            f"inti tema; bukti ulasan diambil dari himpunan yang sama."
         )
 
     return sanitize({
@@ -755,6 +956,7 @@ def get_recommendations(top_n: int = 8):
             "negative_total": total_negative,
             "theme_total": len(recommendations),
             "summary": summary,
+            "methodology": METHODOLOGY_NOTE,
         },
     })
 

@@ -415,38 +415,48 @@ sesuai data (bukan karangan).
 
 **Solusi:** `/api/recommendations` diperluas; tiap item kini berisi `label`,
 `review_count`, `share_pct`, `avg_rating`, `low_rating_pct`, `priority`,
-`keywords[{keyword,score}]`, `insight`, `action`, dan `sample_reviews`
-(`text`,`rating`,`author`,`review_date`). `meta` berisi `negative_total`,
-`theme_total`, dan `summary`. `insight` & `action` disusun **rule-based** dari
-agregasi data (bukan LLM), `priority`: ≥25 → Tinggi, ≥15 → Sedang, sisanya Rendah.
+`evidence_strength`, `keywords[{keyword,count}]`, `insight`, `action`, dan
+`sample_reviews` (`text`,`rating`,`author`,`review_date`,`matched_terms`).
+`meta` berisi `negative_total`, `theme_total`, `summary`, dan `methodology`.
+`insight` & `action` disusun **rule-based** dari agregasi data (bukan LLM).
+`priority`: ≥20 → Tinggi, ≥15 → Sedang, sisanya Rendah. `evidence_strength`:
+≥20 → kuat, ≥15 → sedang, sisanya `terbatas` (UI menampilkan badge
+**"Bukti terbatas"** agar jumlah bukti yang sedikit tetap transparan).
 `top_n` default 8.
 
 Contoh output aktual (tema Harga, 34 ulasan, prioritas Tinggi):
 
-> Dari 34 ulasan negatif yang membahas Harga (25,8% dari 132 keluhan), 73,5% memberi
-> rating 1–2 dengan rata-rata 2,1/5. Kata kunci dominan: "mahal" dan "harga". Artinya,
-> keluhan berpusat pada persepsi harga yang dianggap kurang sepadan dengan pengalaman
-> yang didapat.
+> Dari 132 ulasan negatif, 34 di antaranya menyebut Harga (25,8%). 73,5% di
+> antaranya memberi rating 1–2 (rata-rata 2,1/5). Istilah yang paling sering
+> muncul: "mahal", "harga", dan "kemahalan". Artinya, keluhan berpusat pada
+> persepsi harga yang dianggap kurang sepadan dengan pengalaman yang didapat.
 >
 > **Saran:** Evaluasi kewajaran harga dan komunikasikan nilai (fasilitas/pengalaman)
 > yang didapat pengunjung.
 
 **Perubahan file:**
 - `backend_seed/main.py` — `get_recommendations` ditulis ulang; konstanta
-  `THEME_LABELS`, `THEME_INTERPRETATION`, `THEME_ACTION`; helper `_format_id_float`,
-  `_priority_for`, `_parse_tokens`, `pick_samples`.
+  `THEME_LABELS`, `THEME_INTERPRETATION`, `THEME_ACTION`, `THEME_RELEVANCE`
+  (include/exclude regex per tema), `NEGATIVE_CUES`, `METHODOLOGY_NOTE`; helper
+  `_format_id_float`, `_priority_for`, `_evidence_strength`, `_match_theme`,
+  `pick_samples`.
 - `frontend/js/pages/recommendations.js` — ringkasan halaman + kartu berurutan
-  **Kesimpulan → Saran Perbaikan → Bukti topik → Bukti ulasan** + badge prioritas +
-  drill-down; memanggil `top_n: 8`.
-- `frontend/css/pages/recommendations.css` — gaya ringkasan, badge prioritas, kotak
-  kesimpulan/saran, chip topik, dan catatan metodologi.
+  **Kesimpulan → Saran Perbaikan → Bukti topik → Bukti ulasan** + badge prioritas,
+  badge kekuatan bukti, caption `Cocok: …` dari `matched_terms`, jumlah pada chip
+  topik, catatan `meta.methodology`, dan drill-down; memanggil `top_n: 8`.
+- `frontend/css/pages/recommendations.css` — gaya ringkasan, badge prioritas/bukti,
+  kotak kesimpulan/saran, chip topik + count, caption `Cocok:`, catatan metodologi.
 - `backend_seed/verify_end_to_end.py` — asersi `meta.negative_total==132`, isi
-  `insight`/`action`/`priority`, `keywords>0`, `sample_reviews>0`, `meta.summary`.
+  `insight`/`action`/`priority`, `keywords>0` + `count`, `sample_reviews>0` +
+  `matched_terms`, `evidence_strength`, `meta.summary`, `meta.methodology`, dan
+  bukti Makanan bebas konteks non-kuliner.
 - `DESIGN.md` §5.D, `PRD.md` §10 — anatomi kartu & kontrak respons baru.
 
-**Verifikasi:** smoke test **21/21 lulus**; uji browser Playwright **13/13 lulus**
+**Verifikasi:** smoke test **26/26 lulus**; uji browser Playwright **22/22 lulus**
 (ringkasan, 8 kartu, urutan Harga di atas, semua blok kesimpulan/saran/bukti,
-drill-down ulasan terbuka, tanpa error JS). Server uji: `uvicorn` port 8000.
+badge bukti, caption `Cocok:`, catatan metode, kartu Makanan bebas bukti
+non-kuliner, drill-down ulasan terbuka, tanpa error JS). Server uji: `uvicorn`
+port 8000.
 
 **Catatan rollback:** versi sebelum fitur ini ada di tag **`revisi-dosen-2026-10-12`**
 (commit `9449d2f`). Untuk membatalkan: `git checkout -b rollback-kesimpulan revisi-dosen-2026-10-12`
@@ -454,3 +464,72 @@ atau `git checkout -- frontend/js/pages/recommendations.js` dsb. Setelah disetuj
 buat commit + tag savepoint baru.
 
 **Belum di-deploy** — PythonAnywhere (produksi instansi) tidak disentuh.
+
+### 15.1 Tindak lanjut — Relevansi Bukti (15 November 2026)
+
+**Masalah baru dari dosen:** kartu **Makanan & Kuliner** berisi ulasan yang tidak
+membahas makanan (mis. memancing atau memberi makan hewan), dan kartu **Akses &
+Lalu Lintas** berisi ulasan positif. Pertanyaan dosen: "kenapa card ulasan makanan
+berisi ulasan tidak terkait makanan, dan bagaimana perhitungannya?"
+
+**Akar masalah (terverifikasi):** tabel `topic_keywords` hanya menyimpan satu
+keyword umum per tema (`makan` untuk Makanan, `tempat` untuk Fasilitas, `kurang`
+untuk Pelayanan, dst.). Pencocokan lama berbasis keyword tersebut sehingga
+menangkap banyak ulasan multi-topik; `pick_samples` lama memilih **teks terpanjang**
+yang mengandung keyword, sehingga ulasan serba-bisa selalu menang. Contoh nyata:
+ulasan "kasih makan marmut…" masuk Makanan karena kata `makan`, dan ulasan
+"enak pas gak macet…" masuk Akses karena kata `macet` walau pujian.
+
+**Solusi:** relevansi dikurasi di kode (DB dan `topic_keywords` **tidak diubah**):
+
+- `THEME_RELEVANCE` — regex *include* + *exclude* per tema. Makanan memakai istilah
+  kuliner (`makanan`, `kuliner`, `resto`, `menu`, `rasa`, `kantin`, …) dan menolak
+  frasa konteks hewan (`kasih makan`, `pancing`, `makan hewan`, …). Hewan memakai
+  nama satwa; Akses memakai `parkir`, `macet`, `jalan`, `pak ogah`, dst.
+- `review_count`, `share_pct`, `avg_rating`, `low_rating_pct`, `priority`, dan
+  `sample_reviews` dihitung dari **himpunan ulasan tervalidasi yang sama** — satu
+  sumber kebenaran, sehingga angka dan bukti selalu konsisten.
+- `pick_samples` baru memprioritaskan rating ≤3 dan ulasan yang memuat sinyal
+  keluhan (`NEGATIVE_CUES`), lalu memberi skor: jumlah istilah tema + sinyal
+  negatif + rating rendah + kepadatan istilah + **fokus tema** (ulasan yang
+  menyebut banyak tema lain tidak diprioritaskan).
+- Tiap cuplikan menyertakan `matched_terms` yang ditampilkan sebagai **"Cocok: …"**,
+  sehingga pembaca bisa melihat alasan ulasan itu dipilih.
+- Tema dengan bukti sedikit tidak dipaksa 3 sampel dan tidak difabrikasi; UI
+  menampilkan badge **"Bukti terbatas"** (maksimal 2 cuplikan).
+- `meta.methodology` menjelaskan bahwa satu ulasan dapat menyebut beberapa tema,
+  sehingga jumlah antar-tema **tidak dijumlahkan** menjadi 132.
+
+**Angka sebelum vs sesudah** (132 ulasan negatif; satu ulasan bisa masuk >1 tema):
+
+| Tema | Sebelum (HEAD) | Sesudah | Catatan |
+|---|---:|---:|---|
+| Harga | 34 | 34 | tetap; bukti kini lebih fokus |
+| Hewan & Satwa | 26 | 33 | istilah satwa lebih lengkap |
+| Tiket / Biaya Masuk | 32 | 32 | tetap |
+| Akses & Lalu Lintas | 11 | 16 | tambah parkir/jalan/pak ogah |
+| Anak & Keluarga | 13 | 14 | tetap |
+| Makanan & Kuliner | 23 | 12 | 11 false positive dibuang |
+| Pelayanan Staf | 20 | 12 | kata `kurang` yang terlalu umum dibuang |
+| Fasilitas | 27 | 10 | kata `tempat` yang terlalu umum dibuang |
+
+**Contoh bukti before/after:**
+
+- Makanan sebelum: *"Yang mau kesini di pikir ulang deh, tiket 80rb ga worth it…"*
+  (bukan makanan). Sesudah: *"makanan tidak rekom, rasa biasa overprice…"* dengan
+  caption `Cocok: makanan, rasa, resto`.
+- Akses sebelum: *"Tempat yg seru…enak pas gak macet…"* (pujian). Sesudah:
+  *"Parkir nya sempit, jalan depan nya jelek, banyak pak ogah…"* dengan caption
+  `Cocok: parkir, jalan, pak ogah`.
+
+**Perubahan file revisi 3:** `backend_seed/main.py`, `frontend/js/pages/recommendations.js`,
+`frontend/css/pages/recommendations.css`, `backend_seed/verify_end_to_end.py`,
+`HANDOFF.md`, `DESIGN.md`, `PRD.md`. **Tidak ada perubahan DB.**
+
+**Verifikasi:** smoke test **26/26 lulus**; Playwright **22/22 lulus**, termasuk
+cek tiap kutipan punya `matched_terms`, badge "Bukti terbatas" pada 4 tema dengan
+bukti sedikit, dan kartu Makanan bebas frasa non-kuliner.
+
+**Rollback revisi 3:** tag **`revisi-2-rekomendasi-insight-2026-11-15`** (commit
+`e6f4632`). Tag revisi 3: **`revisi-3-relevansi-bukti-2026-11-15`**. Tidak di-deploy
+ke PythonAnywhere.

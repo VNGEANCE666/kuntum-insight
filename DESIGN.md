@@ -141,13 +141,14 @@ Halaman diawali **ringkasan** dari `meta.summary`: total ulasan negatif dan tema
 Tiap kartu rekomendasi (aksen Coral/Negatif) disusun dengan urutan **Kesimpulan → Saran Perbaikan → Bukti**:
 
 - `theme` + `label` — nama tema ramah pengguna (mis. "Harga", "Tiket / Biaya Masuk").
-- `review_count`, `share_pct` (persentase dari `meta.negative_total`), `avg_rating`, `low_rating_pct`, `priority` (Tinggi/Sedang/Rendah).
+- `review_count`, `share_pct` (persentase dari `meta.negative_total`), `avg_rating`, `low_rating_pct`, `priority` (Tinggi/Sedang/Rendah), dan `evidence_strength` (kuat/sedang/terbatas).
 - `insight` — kalimat **kesimpulan otomatis** yang dirangkum dari data: jumlah ulasan, porsi terhadap seluruh keluhan, kecenderungan rating, kata kunci dominan, dan interpretasinya.
 - `action` — usulan **tindakan perbaikan** untuk tema tsb.
-- `keywords` — daftar `{keyword, score}` (top-3) sebagai **bukti topik**.
-- `sample_reviews` — hingga 3 cuplikan `review_text_original` beserta `rating`, `author`, `review_date` sebagai **bukti kualitatif**.
+- `keywords` — daftar `{keyword, count}` (top-3) sebagai **bukti topik**; chip menampilkan jumlah ulasan yang menyebut istilah tersebut.
+- `sample_reviews` — hingga 3 cuplikan `review_text_original` beserta `rating`, `author`, `review_date`, dan `matched_terms` sebagai **bukti kualitatif**. Caption **"Cocok: …"** menampilkan `matched_terms` agar alasan pemilihan cuplikan transparan.
+- `meta.methodology` — catatan metode yang dirender di bawah daftar kartu: angka dan bukti dihitung dari himpunan ulasan tervalidasi yang sama; satu ulasan dapat menyebut beberapa tema sehingga jumlah antar-tema tidak dijumlahkan.
 
-Kesimpulan bersifat **rule-based** (dihitung dari data, bukan karangan), dan ulasan asli **wajib ditampilkan** agar kesimpulan dapat diverifikasi pembaca. Urutan kartu berdasarkan `review_count` menurun (API yang mengurutkan; frontend render sesuai urutan response).
+Relevansi tema dikurasi di backend (`THEME_RELEVANCE`: regex include/exclude per tema) — bukan sekadar mencocokkan satu keyword umum. Tema dengan bukti sedikit tetap ditampilkan apa adanya, diberi badge **"Bukti terbatas"**, dan tidak dipaksa memiliki 3 sampel. Kesimpulan bersifat **rule-based** (dihitung dari data, bukan karangan), dan ulasan asli **wajib ditampilkan** agar kesimpulan dapat diverifikasi pembaca. Urutan kartu berdasarkan `review_count` menurun (API yang mengurutkan; frontend render sesuai urutan response).
 
 ### E. Data Pipeline Status — rute `/pipeline`
 
