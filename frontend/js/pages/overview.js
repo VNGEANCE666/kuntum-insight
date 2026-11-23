@@ -307,8 +307,7 @@ function renderRatingBar(el, items) {
  * besar. Data & logika fetch tidak diubah — murni perubahan layout render.
  */
 function renderTrendChart(el, items, meta) {
-  const holder = el.querySelector('.chart-wrap, .skeleton');
-  if (holder) holder.remove();
+  el.querySelectorAll('.trend-grid, .chart-wrap, .skeleton').forEach((node) => node.remove());
 
   // Aturan 5: sumbu X KATEGORIKAL dengan labels period (sama utk ketiga chart)
   const labels = items.map((d) => d.period);
