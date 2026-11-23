@@ -110,6 +110,8 @@ detik/hari, 1 web app (unused web app berakhir setelah 1 bulan).
    `[startup] 2832 ulasan dimuat, model versi v1 siap.`
 6. Setelah perubahan kode: `pa website reload --domain USERNAME.pythonanywhere.com`.
 
+> **Status terbaru:** revisi 3 (commit `4a6fcbf`, tag `revisi-3-relevansi-bukti-2026-11-15`) sudah **live** di `https://vngnc.pythonanywhere.com` — 8 kartu rekomendasi lengkap dengan kesimpulan, saran perbaikan, dan bukti relevan. Rincian deploy, verifikasi, dan rollback ada di `HANDOFF.md` §12.4.
+
 > `--app-dir backend_seed` membuat `from inference_utils import ...` (patch
 > `__main__` untuk `joblib.load()`, HANDOFF §3.1) bekerja tanpa PYTHONPATH, dan
 > `BASE_DIR` di `main.py` membuat `data/` & `models/` ditemukan terlepas dari CWD.

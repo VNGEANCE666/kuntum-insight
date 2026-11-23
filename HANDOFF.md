@@ -297,6 +297,17 @@ Fase ini mengejar satu kebutuhan: URL publik **gratis, tanpa kartu kredit**, unt
 
 ### 12.3 Bukti verifikasi di situs live
 Seluruh titik dicek via HTTP publik dengan hasil 200 dan identik dengan data lokal: `/` (title dashboard), `/api/pipeline/status` (model v1, 2832 ulasan), `/api/overview/kpi`, `/api/overview/sentiment-distribution`, `/api/overview/rating-distribution`, `/api/overview/sentiment-trend`, `/api/topics`, `/api/recommendations`, `/api/reviews`. Tolak ukur smoke test lokal (`verify_end_to_end.py`) sudah diulang manual terhadap URL produksi.
+
+### 12.4 Deploy revisi 3 ke PythonAnywhere (15 November 2026)
+
+Revisi 3 (commit `4a6fcbf`, tag `revisi-3-relevansi-bukti-2026-11-15`) sudah di-push ke `origin/main` dan di-deploy ke `https://vngnc.pythonanywhere.com`.
+
+**Kendala & penyelesaian:** clone PA masih di `a80b669` dan memiliki perubahan lokal (fitur autentikasi yang sebenarnya sudah ada di commit GitHub) serta file untracked `backend_seed/auth.json` berisi kredensial produksi. `git pull --ff-only` ditolak karena konflik. Penyelesaiannya: backup file ke `~/pa-backup-20261115`, kembalikan file terlacak, hapus salinan untracked yang sudah digantikan commit, `git reset --hard origin/main`, restore `auth.json`, lalu **Reload** di tab Web. Reload wajib: file statis langsung terbaca dari disk, tetapi proses ASGI baru memakai kode backend setelah restart.
+
+**Verifikasi live** (login `admin_kuntum`, via HTTP): `/` → 200; `/api/recommendations?top_n=8` → 8 kartu, `negative_total=132`, Harga 34, Makanan 12, `insight`/`action`/`keywords`/`sample_reviews[].matched_terms`/`meta.methodology` semuanya hadir; contoh bukti Makanan "makanan tidak rekom, rasa biasa overprice…" dengan caption `Cocok: makanan, rasa, resto`.
+
+**Rollback di PA:** `cd ~/kuntum-insight && git reset --hard e6f4632` lalu Reload Web (tag `revisi-2-rekomendasi-insight-2026-11-15`). `auth.json` tidak ikut berubah karena di-gitignore; cadangan tetap ada di `~/pa-backup-20261115/auth.json`.
+
 ## 13. Autentikasi (login / logout) — lapisan keamanan v2
 
 ### 13.1 Desain
@@ -531,5 +542,5 @@ cek tiap kutipan punya `matched_terms`, badge "Bukti terbatas" pada 4 tema denga
 bukti sedikit, dan kartu Makanan bebas frasa non-kuliner.
 
 **Rollback revisi 3:** tag **`revisi-2-rekomendasi-insight-2026-11-15`** (commit
-`e6f4632`). Tag revisi 3: **`revisi-3-relevansi-bukti-2026-11-15`**. Tidak di-deploy
-ke PythonAnywhere.
+`e6f4632`). Tag revisi 3: **`revisi-3-relevansi-bukti-2026-11-15`**. **Sudah
+di-deploy ke PythonAnywhere** — prosedur, verifikasi, dan rollback ada di §12.4.
