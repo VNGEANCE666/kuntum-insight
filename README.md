@@ -32,21 +32,37 @@ Arsitektur **client-server**: backend FastAPI membaca data ulasan + artefak mode
    pip install -r backend_seed/requirements.txt
    ```
 
-2. Jalankan backend dari **root project** (path `data/` dan `models/` relatif terhadap CWD; `main.py` sekaligus melayani frontend via `app.mount("/", StaticFiles("frontend"))`):
+2. Buka terminal di **root project** (folder `handoff`) dan jalankan backend. Path `data/` dan `models/` relatif terhadap CWD; `main.py` sekaligus melayani frontend via `app.mount("/", StaticFiles("frontend"))`.
 
-   PowerShell:
+   **PowerShell:**
    ```powershell
+   cd "D:\DATA & MODEL ANALISIS SENTIMEN\kuntum-insight-handoff\handoff"
    $env:PYTHONPATH="backend_seed"
-   uvicorn backend_seed.main:app --reload
-   ```
-   Bash/cmd:
-   ```bash
-   PYTHONPATH=backend_seed uvicorn backend_seed.main:app --reload
+   python -m uvicorn backend_seed.main:app --host 127.0.0.1 --port 8000 --reload
    ```
 
-3. Buka:
-   - Frontend: `http://127.0.0.1:8000/`
+   **Bash/cmd:**
+   ```bash
+   cd /path/ke/handoff
+   PYTHONPATH=backend_seed python -m uvicorn backend_seed.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+
+   Biarkan jendela terminal ini tetap terbuka selama server dipakai. `$env:PYTHONPATH` hanya berlaku untuk sesi terminal tersebut.
+
+3. Buka di browser:
+   - Login: `http://127.0.0.1:8000/login.html`
+   - Dashboard: `http://127.0.0.1:8000/`
    - Dokumentasi API: `http://127.0.0.1:8000/docs`
+   - Kredensial lokal: `admin_kuntum` / `kuntum_farmfield` (atau sesuai isi `backend_seed/auth.json`)
+
+4. Mematikan server: tekan `Ctrl+C` di terminal tersebut, lalu tutup jendelanya.
+
+5. Kalau port 8000 sudah dipakai (misalnya server lama masih jalan):
+   ```powershell
+   Get-NetTCPConnection -LocalPort 8000 -State Listen
+   Stop-Process -Id <OwningProcess> -Force
+   ```
+   Ganti `<OwningProcess>` dengan PID dari hasil perintah pertama.
 
 ## Deploy ke internet
 
